@@ -24,6 +24,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   ArrowLeft,
   ArrowRight,
   Check,
@@ -31,10 +39,12 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
-  GripVertical,
-  X,
   HelpCircle,
-  Copy
+  Package,
+  Layers,
+  Network,
+  Zap,
+  Link2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -45,7 +55,6 @@ import {
   ReportType,
   ReportCycle,
   CommandScene,
-  OnlyCount,
   CountReportCycle,
   DataOutputMethod,
   PollingCycle,
@@ -57,38 +66,47 @@ import {
   PollingSamplingRatio,
   NetflowSamplingRatio,
   RuleType,
-  TunnelMatchType,
-  UdValueMatchMode,
-  CrossPkgMatch,
-  FirstNBuffer,
-  OperatorCodes,
-  ProvinceCodes,
   TransportProtocols,
   ApplicationProtocols,
+  OperatorCodes,
+  ProvinceCodes,
   getDataOutputMethodByScene,
-  getRequiredFieldsByContext,
   getRuleRequiredFields,
-  validateTupleRule,
-  getOutputTypeOptions,
   type DynamicTrafficCommand,
-  type CommandRule,
   type RuleInfo,
 } from "@/lib/command-types"
 
 // 步骤定义
 const steps = [
   { id: 1, title: "指令基本信息", description: "配置指令元数据" },
-  { id: 2, title: "指令对象", description: "设置生效范围" },
+  { id: 2, title: "输入端口组", description: "选择采集端口组" },
   { id: 3, title: "执行结果", description: "配置结果处理方式" },
   { id: 4, title: "指令场景", description: "选择监测场景" },
-  { id: 5, title: "数据输出", description: "配置输出方式" },
-  { id: 6, title: "规则配置", description: "添加筛选规则" },
+  { id: 5, title: "数据输出", description: "配置输出方式与端口组" },
+  { id: 6, title: "规则配置", description: "添加规则或调用策略" },
   { id: 7, title: "校验发布", description: "确认并发布" },
 ]
 
 interface TaskCreateWizardProps {
   onBack: () => void
 }
+
+// 模拟端口组数据
+const mockPortGroups = [
+  { id: "PG-001", name: "省网出口-输入端口组A", type: "input", comCode: "0013", effectProvince: ["110000", "120000"], device: "DPI-CORE-01", ports: ["GE0/0/1", "GE0/0/2"], bandwidth: 10000 },
+  { id: "PG-002", name: "城域网出口-输入端口组B", type: "input", comCode: "0013", effectProvince: ["310000", "320000"], device: "DPI-EDGE-01", ports: ["XGE0/0/1", "XGE0/0/2"], bandwidth: 40000 },
+  { id: "PG-003", name: "国家侧-输出端口组", type: "output", comCode: "0013", effectProvince: ["110000"], device: "FORWARD-01", ports: ["100GE0/0/1"], bandwidth: 100000 },
+  { id: "PG-004", name: "企业侧-输出端口组", type: "output", comCode: "0013", effectProvince: ["440000"], device: "FORWARD-02", ports: ["40GE0/0/1"], bandwidth: 80000 },
+  { id: "PG-005", name: "IDC出口-输入端口组", type: "input", comCode: "0013", effectProvince: ["330000"], device: "DPI-IDC-01", ports: ["100GE0/0/1"], bandwidth: 200000 },
+]
+
+// 模拟规则策略数据
+const mockRulePolicies = [
+  { id: "RP-001", name: "HTTP流量监测策略", rules: [{ ruleType: 1, dstPort: "80,8080", protocolType: 6 }, { ruleType: 8, host: "*.example.com" }] },
+  { id: "RP-002", name: "HTTPS加密流量策略", rules: [{ ruleType: 1, dstPort: "443", protocolType: 6 }, { ruleType: 9, sni: "*.target.cn" }] },
+  { id: "RP-003", name: "特定应用协议监测", rules: [{ ruleType: 11, applicationProtocol: 3 }] },
+  { id: "RP-004", name: "恶意特征码检测策略", rules: [{ ruleType: 3, udValue: "4d5a9000", offset: 0 }] },
+]
 
 // 初始表单数据
 const initialFormData = {
@@ -102,12 +120,8 @@ const initialFormData = {
   owner: "",
   createTime: new Date().toISOString().slice(0, 19).replace("T", " "),
 
-  // commandObject - 指令对象
-  effectSystem: ["2"],
-  comCode: "",
-  effectVendor: "",
-  effectProvince: [] as string[],
-  effectHouse: "",
+  // 输入端口组选择（替代原来的commandObject）
+  inputPortGroup: "",
 
   // commandResult - 指令执行结果
   handleType: 1,
@@ -124,6 +138,9 @@ const initialFormData = {
   pollingCycle: 0,
   packageNValue: 8,
   byteNValue: 64,
+
+  // 输出端口组选择
+  outputPortGroup: "",
 
   // rules - 规则数组
   rules: [] as Array<{
@@ -144,6 +161,7 @@ const initialFormData = {
     netflowSamplingRatio: number
     startTime: string
     endTime: string
+    fromPolicy?: string // 来源策略ID
   }>,
 }
 
@@ -151,6 +169,7 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
   const [currentStep, setCurrentStep] = React.useState(1)
   const [formData, setFormData] = React.useState(initialFormData)
   const [validationErrors, setValidationErrors] = React.useState<string[]>([])
+  const [policyDialogOpen, setPolicyDialogOpen] = React.useState(false)
 
   const updateFormData = (updates: Partial<typeof formData>) => {
     setFormData(prev => {
@@ -178,8 +197,7 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
         if (!formData.owner) errors.push("指令属主不能为空")
         break
       case 2:
-        if (!formData.comCode) errors.push("请选择运营商")
-        if (formData.effectProvince.length === 0) errors.push("请选择生效省份")
+        if (!formData.inputPortGroup) errors.push("请选择输入端口组")
         break
       case 3:
         if (formData.handleType === 1 && formData.reportType === 1 && !formData.reportCycle) {
@@ -188,7 +206,7 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
         break
       case 6:
         if (formData.rules.length === 0) {
-          errors.push("请至少添加一条规则")
+          errors.push("请至少添加一条规则或调用规则策略")
         }
         formData.rules.forEach((rule, index) => {
           if (!rule.ruleAlias) errors.push(`规则${index + 1}：规则别名不能为空`)
@@ -216,6 +234,9 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
 
   const handlePublish = () => {
     if (validateStep(currentStep)) {
+      // 从选中的端口组获取指令对象信息
+      const selectedInputGroup = mockPortGroups.find(g => g.id === formData.inputPortGroup)
+      
       // 构建完整指令数据
       const commandData: DynamicTrafficCommand = {
         commandInfo: {
@@ -229,11 +250,11 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
           createTime: formData.createTime,
         },
         commandObject: {
-          effectSystem: formData.effectSystem.join(","),
-          comCode: formData.comCode,
-          effectVendor: formData.effectVendor,
-          effectProvince: formData.effectProvince.join(","),
-          effectHouse: formData.effectHouse,
+          effectSystem: "2",
+          comCode: selectedInputGroup?.comCode || "",
+          effectVendor: "",
+          effectProvince: selectedInputGroup?.effectProvince.join(",") || "",
+          effectHouse: "",
         },
         commandResult: {
           handleType: formData.handleType,
@@ -272,8 +293,35 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
       }
       
       console.log("生成的指令数据:", JSON.stringify(commandData, null, 2))
+      console.log("输入端口组:", formData.inputPortGroup)
+      console.log("输出端口组:", formData.outputPortGroup)
       alert("指令创建成功！")
       onBack()
+    }
+  }
+
+  // 从策略库调用规则
+  const importFromPolicy = (policyId: string) => {
+    const policy = mockRulePolicies.find(p => p.id === policyId)
+    if (policy) {
+      const newRule = {
+        id: `rule-${Date.now()}`,
+        ruleId: formData.rules.length + 1,
+        ruleAlias: policy.name,
+        firstNBuffer: "0",
+        nBuffer: 8,
+        trafficReportType: [] as string[],
+        saveTime: 6,
+        outputType: [] as string[],
+        ruleInfo: policy.rules as RuleInfo[],
+        trafficSamplingRatio: 0,
+        netflowSamplingRatio: 1,
+        startTime: "",
+        endTime: "",
+        fromPolicy: policyId,
+      }
+      updateFormData({ rules: [...formData.rules, newRule] })
+      setPolicyDialogOpen(false)
     }
   }
 
@@ -366,7 +414,7 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
             <StepCommandInfo formData={formData} updateFormData={updateFormData} />
           )}
           {currentStep === 2 && (
-            <StepCommandObject formData={formData} updateFormData={updateFormData} />
+            <StepInputPortGroup formData={formData} updateFormData={updateFormData} />
           )}
           {currentStep === 3 && (
             <StepCommandResult formData={formData} updateFormData={updateFormData} />
@@ -378,7 +426,11 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
             <StepDataOutput formData={formData} updateFormData={updateFormData} />
           )}
           {currentStep === 6 && (
-            <StepRuleConfig formData={formData} updateFormData={updateFormData} />
+            <StepRuleConfig 
+              formData={formData} 
+              updateFormData={updateFormData}
+              onOpenPolicyDialog={() => setPolicyDialogOpen(true)}
+            />
           )}
           {currentStep === 7 && (
             <StepReview formData={formData} />
@@ -409,7 +461,66 @@ export function TaskCreateWizard({ onBack }: TaskCreateWizardProps) {
           )}
         </div>
       </div>
+
+      {/* 规则策略选择对话框 */}
+      <Dialog open={policyDialogOpen} onOpenChange={setPolicyDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>从规则策略库调用</DialogTitle>
+            <DialogDescription>
+              选择预配置的规则策略，快速导入规则内容
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4 max-h-[400px] overflow-y-auto">
+            {mockRulePolicies.map((policy) => (
+              <div
+                key={policy.id}
+                className="flex items-center justify-between p-4 rounded-lg border hover:border-primary hover:bg-primary/5 cursor-pointer transition-colors"
+                onClick={() => importFromPolicy(policy.id)}
+              >
+                <div>
+                  <div className="font-medium">{policy.name}</div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    包含 {policy.rules.length} 条规则
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {policy.rules.slice(0, 2).map((rule, idx) => (
+                    <Badge key={idx} variant="outline" className="text-xs">
+                      {RuleType[rule.ruleType as keyof typeof RuleType]}
+                    </Badge>
+                  ))}
+                  {policy.rules.length > 2 && (
+                    <Badge variant="outline" className="text-xs">+{policy.rules.length - 2}</Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPolicyDialogOpen(false)}>
+              取消
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+// 字段提示组件
+function FieldTooltip({ content }: { content: string }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="max-w-xs text-xs">{content}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -425,7 +536,7 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
         <Input
           value={formData.commandId}
           disabled
-          className="bg-secondary border-0 font-mono"
+          className="font-mono"
         />
       </div>
 
@@ -437,7 +548,6 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
         <Input
           value={formData.version}
           disabled
-          className="bg-secondary border-0"
         />
       </div>
 
@@ -449,7 +559,7 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
           value={String(formData.commandSource)} 
           onValueChange={(v) => updateFormData({ commandSource: Number(v) })}
         >
-          <SelectTrigger className="bg-secondary border-0">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -468,7 +578,7 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
           value={formData.sourceSystem} 
           onValueChange={(v) => updateFormData({ sourceSystem: v })}
         >
-          <SelectTrigger className="bg-secondary border-0">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -487,7 +597,7 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
           value={String(formData.operationType)} 
           onValueChange={(v) => updateFormData({ operationType: Number(v) })}
         >
-          <SelectTrigger className="bg-secondary border-0">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -505,7 +615,7 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
           value={String(formData.level)} 
           onValueChange={(v) => updateFormData({ level: Number(v) })}
         >
-          <SelectTrigger className="bg-secondary border-0">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -525,7 +635,6 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
           placeholder="请输入指令属主"
           value={formData.owner}
           onChange={(e) => updateFormData({ owner: e.target.value })}
-          className="bg-secondary border-0"
         />
       </div>
 
@@ -536,140 +645,106 @@ function StepCommandInfo({ formData, updateFormData }: { formData: typeof initia
         <Input
           value={formData.createTime}
           disabled
-          className="bg-secondary border-0"
         />
       </div>
     </div>
   )
 }
 
-// ==================== 步骤2: 指令对象 ====================
-function StepCommandObject({ formData, updateFormData }: { formData: typeof initialFormData; updateFormData: (updates: Partial<typeof initialFormData>) => void }) {
-  const toggleProvince = (code: string) => {
-    const provinces = formData.effectProvince.includes(code)
-      ? formData.effectProvince.filter(p => p !== code)
-      : [...formData.effectProvince, code]
-    updateFormData({ effectProvince: provinces })
-  }
-
-  const toggleSystem = (code: string) => {
-    const systems = formData.effectSystem.includes(code)
-      ? formData.effectSystem.filter(s => s !== code)
-      : [...formData.effectSystem, code]
-    updateFormData({ effectSystem: systems })
-  }
-
-  const selectAllProvinces = () => {
-    updateFormData({ effectProvince: Object.keys(ProvinceCodes) })
-  }
-
-  const clearProvinces = () => {
-    updateFormData({ effectProvince: [] })
-  }
+// ==================== 步骤2: 输入端口组选择 ====================
+function StepInputPortGroup({ formData, updateFormData }: { formData: typeof initialFormData; updateFormData: (updates: Partial<typeof initialFormData>) => void }) {
+  const inputPortGroups = mockPortGroups.filter(g => g.type === "input")
+  const selectedGroup = mockPortGroups.find(g => g.id === formData.inputPortGroup)
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            运营商代码 <span className="text-destructive">*</span>
-          </Label>
-          <Select 
-            value={formData.comCode} 
-            onValueChange={(v) => updateFormData({ comCode: v })}
-          >
-            <SelectTrigger className="bg-secondary border-0">
-              <SelectValue placeholder="请选择运营商" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(OperatorCodes).map(([code, name]) => (
-                <SelectItem key={code} value={code}>{name} ({code})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            生效厂商
-            <FieldTooltip content="可选，指定生效的厂商名称" />
-          </Label>
-          <Input
-            placeholder="请输入生效厂商（可选）"
-            value={formData.effectVendor}
-            onChange={(e) => updateFormData({ effectVendor: e.target.value })}
-            className="bg-secondary border-0"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label className="flex items-center gap-2">
-            生效机房
-            <FieldTooltip content="可选，指定生效的机房" />
-          </Label>
-          <Input
-            placeholder="请输入生效机房（可选）"
-            value={formData.effectHouse}
-            onChange={(e) => updateFormData({ effectHouse: e.target.value })}
-            className="bg-secondary border-0"
-          />
+      <div className="flex items-start gap-2 p-4 rounded-lg bg-primary/10 border border-primary/20">
+        <Info className="h-5 w-5 text-primary mt-0.5" />
+        <div className="text-sm">
+          <p className="font-medium text-primary">选择输入端口组</p>
+          <p className="text-muted-foreground">
+            输入端口组包含预配置的运营商、生效省份、采集设备等指令对象信息，选择后自动填充相关字段。
+          </p>
         </div>
       </div>
 
       <div className="space-y-3">
         <Label className="flex items-center gap-2">
-          生效系统 <span className="text-destructive">*</span>
-          <FieldTooltip content="可多选，多个系统时用逗号分隔" />
+          输入端口组 <span className="text-destructive">*</span>
         </Label>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(SystemType).map(([key, label]) => (
-            <Badge
-              key={key}
-              variant={formData.effectSystem.includes(key) ? "default" : "outline"}
-              className="cursor-pointer"
-              onClick={() => toggleSystem(key)}
+        <div className="grid gap-3">
+          {inputPortGroups.map((group) => (
+            <div
+              key={group.id}
+              onClick={() => updateFormData({ inputPortGroup: group.id })}
+              className={cn(
+                "flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-colors",
+                formData.inputPortGroup === group.id
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-muted/50"
+              )}
             >
-              {label}
-            </Badge>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Network className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <div className="font-medium">{group.name}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {group.device} | {group.ports.join(", ")} | {(group.bandwidth / 1000).toFixed(0)}Gbps
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1 max-w-[200px]">
+                {group.effectProvince.map(code => (
+                  <Badge key={code} variant="outline" className="text-xs">
+                    {String(ProvinceCodes[code as keyof typeof ProvinceCodes] || code).replace(/省|市|自治区|壮族|回族|维吾尔/g, "")}
+                  </Badge>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="flex items-center gap-2">
-            生效省份 <span className="text-destructive">*</span>
-            <FieldTooltip content="可多选，多个省份时用逗号分隔" />
-          </Label>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={selectAllProvinces}>
-              全选
-            </Button>
-            <Button variant="outline" size="sm" onClick={clearProvinces}>
-              清空
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2 p-4 rounded-lg bg-secondary/30 max-h-[300px] overflow-y-auto">
-          {Object.entries(ProvinceCodes).map(([code, name]) => (
-            <div
-              key={code}
-              onClick={() => toggleProvince(code)}
-              className={cn(
-                "px-3 py-2 rounded text-sm cursor-pointer transition-colors text-center",
-                formData.effectProvince.includes(code)
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary hover:bg-secondary/80"
-              )}
-            >
-              {name.replace(/省|市|自治区|壮族|回族|维吾尔/g, "")}
+      {/* 显示选中端口组的详细信息 */}
+      {selectedGroup && (
+        <Card className="bg-muted/50 border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">已选端口组信息</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">运营商：</span>
+                <span className="font-medium">{OperatorCodes[selectedGroup.comCode as keyof typeof OperatorCodes]}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">采集设备：</span>
+                <span className="font-medium">{selectedGroup.device}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">端口列表：</span>
+                <span className="font-medium font-mono">{selectedGroup.ports.join(", ")}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">带宽容量：</span>
+                <span className="font-medium">{(selectedGroup.bandwidth / 1000).toFixed(0)} Gbps</span>
+              </div>
             </div>
-          ))}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          已选择 {formData.effectProvince.length} 个省份
-        </p>
-      </div>
+            <div>
+              <span className="text-muted-foreground text-sm">生效省份：</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {selectedGroup.effectProvince.map(code => (
+                  <Badge key={code} variant="secondary" className="text-xs">
+                    {ProvinceCodes[code as keyof typeof ProvinceCodes]}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
@@ -691,7 +766,7 @@ function StepCommandResult({ formData, updateFormData }: { formData: typeof init
                 "p-4 rounded-lg border cursor-pointer transition-colors",
                 formData.handleType === Number(key)
                   ? "border-primary bg-primary/10"
-                  : "border-border bg-secondary/50 hover:bg-secondary"
+                  : "border-border hover:bg-muted"
               )}
             >
               <div className="font-medium text-sm">{label}</div>
@@ -719,7 +794,7 @@ function StepCommandResult({ formData, updateFormData }: { formData: typeof init
                     "p-4 rounded-lg border cursor-pointer transition-colors",
                     formData.reportType === Number(key)
                       ? "border-primary bg-primary/10"
-                      : "border-border bg-secondary/50 hover:bg-secondary"
+                      : "border-border hover:bg-muted"
                   )}
                 >
                   <div className="font-medium text-sm">{label}</div>
@@ -729,7 +804,7 @@ function StepCommandResult({ formData, updateFormData }: { formData: typeof init
           </div>
 
           {formData.reportType === 1 && (
-            <div className="space-y-2 p-4 rounded-lg bg-secondary/30">
+            <div className="space-y-2 p-4 rounded-lg bg-muted/50">
               <Label className="flex items-center gap-2">
                 数据上报频次 <span className="text-destructive">*</span>
                 <FieldTooltip content="定时报送时必填，选择上报的时间间隔" />
@@ -738,7 +813,7 @@ function StepCommandResult({ formData, updateFormData }: { formData: typeof init
                 value={String(formData.reportCycle)} 
                 onValueChange={(v) => updateFormData({ reportCycle: Number(v) })}
               >
-                <SelectTrigger className="bg-secondary border-0 max-w-xs">
+                <SelectTrigger className="max-w-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -777,7 +852,7 @@ function StepCommandScene({ formData, updateFormData }: { formData: typeof initi
                   "p-4 rounded-lg border cursor-pointer transition-colors",
                   formData.commandScene === Number(key)
                     ? "border-primary bg-primary/10"
-                    : "border-border bg-secondary/50 hover:bg-secondary"
+                    : "border-border hover:bg-muted"
                 )}
               >
                 <div className="flex items-center justify-between">
@@ -795,10 +870,10 @@ function StepCommandScene({ formData, updateFormData }: { formData: typeof initi
       </div>
 
       {sceneConstraint?.fixed && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-          <Info className="h-4 w-4 text-blue-500 mt-0.5" />
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-info/10 border border-info/20">
+          <Info className="h-4 w-4 text-info mt-0.5" />
           <div className="text-sm">
-            <p className="font-medium text-blue-500">场景约束提示</p>
+            <p className="font-medium text-info">场景约束提示</p>
             <p className="text-muted-foreground">
               当前场景下，数据输出方式已自动设置为 "{DataOutputMethod[sceneConstraint.value as keyof typeof DataOutputMethod]}"
             </p>
@@ -806,7 +881,7 @@ function StepCommandScene({ formData, updateFormData }: { formData: typeof initi
         </div>
       )}
 
-      <div className="space-y-4 p-4 rounded-lg bg-secondary/30">
+      <div className="space-y-4 p-4 rounded-lg bg-muted/50">
         <div className="flex items-center justify-between">
           <div>
             <Label className="flex items-center gap-2">
@@ -829,7 +904,7 @@ function StepCommandScene({ formData, updateFormData }: { formData: typeof initi
             value={String(formData.countReportCycle)} 
             onValueChange={(v) => updateFormData({ countReportCycle: Number(v) })}
           >
-            <SelectTrigger className="bg-secondary border-0 max-w-xs">
+            <SelectTrigger className="max-w-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -848,6 +923,8 @@ function StepCommandScene({ formData, updateFormData }: { formData: typeof initi
 function StepDataOutput({ formData, updateFormData }: { formData: typeof initialFormData; updateFormData: (updates: Partial<typeof initialFormData>) => void }) {
   const sceneConstraint = getDataOutputMethodByScene(formData.commandScene)
   const isOutputMethodLocked = sceneConstraint?.fixed
+  const outputPortGroups = mockPortGroups.filter(g => g.type === "output")
+  const selectedOutputGroup = mockPortGroups.find(g => g.id === formData.outputPortGroup)
 
   return (
     <div className="space-y-6">
@@ -865,10 +942,10 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
                 "p-4 rounded-lg border transition-colors",
                 formData.dataOutputMethod === Number(key)
                   ? "border-primary bg-primary/10"
-                  : "border-border bg-secondary/50",
+                  : "border-border",
                 isOutputMethodLocked && formData.dataOutputMethod !== Number(key)
                   ? "opacity-50 cursor-not-allowed"
-                  : "cursor-pointer hover:bg-secondary"
+                  : "cursor-pointer hover:bg-muted"
               )}
             >
               <div className="font-medium text-sm">{label}</div>
@@ -879,7 +956,7 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
 
       {/* 轮巡输出参数 */}
       {formData.dataOutputMethod === 4 && (
-        <Card className="bg-secondary/30 border-border">
+        <Card className="bg-muted/50 border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">轮巡输出参数</CardTitle>
             <CardDescription>当数据输出方式为"轮巡输出"时必填</CardDescription>
@@ -895,7 +972,6 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
                   type="number"
                   value={formData.pollingInterval}
                   onChange={(e) => updateFormData({ pollingInterval: Number(e.target.value) })}
-                  className="bg-secondary border-0"
                   min={1}
                 />
               </div>
@@ -907,7 +983,7 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
                   value={String(formData.pollingCycle)} 
                   onValueChange={(v) => updateFormData({ pollingCycle: Number(v) })}
                 >
-                  <SelectTrigger className="bg-secondary border-0">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -924,7 +1000,7 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
 
       {/* 前N包输出参数 */}
       {formData.dataOutputMethod === 5 && (
-        <Card className="bg-secondary/30 border-border">
+        <Card className="bg-muted/50 border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">前N包输出参数</CardTitle>
             <CardDescription>当数据输出方式为"前N包输出"时必填</CardDescription>
@@ -939,7 +1015,7 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
                 value={String(formData.packageNValue)} 
                 onValueChange={(v) => updateFormData({ packageNValue: Number(v) })}
               >
-                <SelectTrigger className="bg-secondary border-0 max-w-xs">
+                <SelectTrigger className="max-w-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -955,7 +1031,7 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
 
       {/* 单包前N字节参数 */}
       {formData.dataOutputMethod === 3 && (
-        <Card className="bg-secondary/30 border-border">
+        <Card className="bg-muted/50 border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">单包输出参数</CardTitle>
             <CardDescription>当数据输出方式为"单个数据包数据输出"时必填</CardDescription>
@@ -970,9 +1046,69 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
                 type="number"
                 value={formData.byteNValue}
                 onChange={(e) => updateFormData({ byteNValue: Number(e.target.value) })}
-                className="bg-secondary border-0 max-w-xs"
+                className="max-w-xs"
                 min={64}
               />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 输出端口组选择 */}
+      <div className="space-y-3">
+        <Label className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-primary" />
+          输出端口组（可选）
+          <FieldTooltip content="选择流量输出的目标端口组，如发送至国家侧或企业侧" />
+        </Label>
+        <div className="grid gap-3">
+          {outputPortGroups.map((group) => (
+            <div
+              key={group.id}
+              onClick={() => updateFormData({ outputPortGroup: formData.outputPortGroup === group.id ? "" : group.id })}
+              className={cn(
+                "flex items-center justify-between p-4 rounded-lg border cursor-pointer transition-colors",
+                formData.outputPortGroup === group.id
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-primary/50 hover:bg-muted/50"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-info/10 flex items-center justify-center">
+                  <Zap className="h-5 w-5 text-info" />
+                </div>
+                <div>
+                  <div className="font-medium">{group.name}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {group.device} | {group.ports.join(", ")} | {(group.bandwidth / 1000).toFixed(0)}Gbps
+                  </div>
+                </div>
+              </div>
+              <Checkbox checked={formData.outputPortGroup === group.id} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 显示选中输出端口组信息 */}
+      {selectedOutputGroup && (
+        <Card className="bg-info/5 border-info/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Zap className="h-4 w-4 text-info" />
+              已选输出端口组
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="text-muted-foreground">设备：</span>
+                <span className="font-medium">{selectedOutputGroup.device}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">端口：</span>
+                <span className="font-medium font-mono">{selectedOutputGroup.ports.join(", ")}</span>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -982,7 +1118,15 @@ function StepDataOutput({ formData, updateFormData }: { formData: typeof initial
 }
 
 // ==================== 步骤6: 规则配置 ====================
-function StepRuleConfig({ formData, updateFormData }: { formData: typeof initialFormData; updateFormData: (updates: Partial<typeof initialFormData>) => void }) {
+function StepRuleConfig({ 
+  formData, 
+  updateFormData,
+  onOpenPolicyDialog
+}: { 
+  formData: typeof initialFormData
+  updateFormData: (updates: Partial<typeof initialFormData>) => void
+  onOpenPolicyDialog: () => void
+}) {
   const [expandedRule, setExpandedRule] = React.useState<string | null>(null)
 
   const addRule = () => {
@@ -1021,23 +1165,36 @@ function StepRuleConfig({ formData, updateFormData }: { formData: typeof initial
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
-            已添加 {formData.rules.length} 条规则，点击规则卡片展开编辑
+            已添加 {formData.rules.length} 条规则
           </p>
         </div>
-        <Button onClick={addRule}>
-          <Plus className="h-4 w-4 mr-2" />
-          添加规则
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={onOpenPolicyDialog}>
+            <Link2 className="h-4 w-4 mr-2" />
+            从策略库调用
+          </Button>
+          <Button onClick={addRule}>
+            <Plus className="h-4 w-4 mr-2" />
+            手动添加规则
+          </Button>
+        </div>
       </div>
 
       {formData.rules.length === 0 && (
-        <Card className="bg-secondary/30 border-dashed border-2">
+        <Card className="border-dashed border-2">
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground mb-4">暂无规则，请添加至少一条筛选规则</p>
-            <Button variant="outline" onClick={addRule}>
-              <Plus className="h-4 w-4 mr-2" />
-              添加第一条规则
-            </Button>
+            <Package className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
+            <p className="text-muted-foreground mb-4">暂无规则，请添加规则或从策略库调用</p>
+            <div className="flex items-center justify-center gap-2">
+              <Button variant="outline" onClick={onOpenPolicyDialog}>
+                <Link2 className="h-4 w-4 mr-2" />
+                从策略库调用
+              </Button>
+              <Button onClick={addRule}>
+                <Plus className="h-4 w-4 mr-2" />
+                手动添加规则
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1052,24 +1209,33 @@ function StepRuleConfig({ formData, updateFormData }: { formData: typeof initial
               <div className="flex items-center gap-3">
                 <Badge variant="outline">{index + 1}</Badge>
                 <div>
-                  <CardTitle className="text-sm">{rule.ruleAlias || "未命名规则"}</CardTitle>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    {rule.ruleAlias || "未命名规则"}
+                    {rule.fromPolicy && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Link2 className="h-3 w-3 mr-1" />
+                        来自策略库
+                      </Badge>
+                    )}
+                  </CardTitle>
                   <CardDescription className="text-xs mt-1">
-                    {rule.trafficReportType.length > 0 
-                      ? rule.trafficReportType.map(t => TrafficReportType[Number(t) as keyof typeof TrafficReportType]).join("、")
-                      : "未配置流量发送方式"}
+                    {rule.ruleInfo.length > 0 
+                      ? `包含 ${rule.ruleInfo.length} 条规则内容`
+                      : "未配置规则内容"}
+                    {rule.trafficReportType.length > 0 && (
+                      <span> | {rule.trafficReportType.map(t => TrafficReportType[Number(t) as keyof typeof TrafficReportType]).join("、")}</span>
+                    )}
                   </CardDescription>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8 text-destructive"
-                  onClick={(e) => { e.stopPropagation(); removeRule(rule.id) }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 text-destructive"
+                onClick={(e) => { e.stopPropagation(); removeRule(rule.id) }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </CardHeader>
           
@@ -1088,7 +1254,7 @@ function StepRuleConfig({ formData, updateFormData }: { formData: typeof initial
   )
 }
 
-// 规则编辑器组件
+// 简化的规则编辑器组件
 function RuleEditor({ 
   rule, 
   formData,
@@ -1112,20 +1278,15 @@ function RuleEditor({
     onUpdate({ outputType: types })
   }
 
-  // 判断是否需要显示特定字段
   const needStorageAmount = rule.trafficReportType.some(t => ["2", "4"].includes(t))
   const needOutputType = rule.trafficReportType.some(t => ["3", "5"].includes(t))
   const needNetflowSampling = rule.trafficReportType.includes("5")
   const needTrafficSampling = formData.dataOutputMethod !== 4 && formData.dataOutputMethod !== 5
-  const needPollingSampling = formData.dataOutputMethod === 4
-  const needPackageNSampling = formData.dataOutputMethod === 5
-  
-  // 流量用途选项限制
+
   const outputTypeOptions = rule.trafficReportType.includes("5") 
     ? { 1: "协议元数据", 5: "流日志" }
     : OutputType
 
-  // 添加规则内容
   const addRuleInfo = (ruleType: number) => {
     const newRuleInfo: RuleInfo = { ruleType }
     onUpdate({ ruleInfo: [...rule.ruleInfo, newRuleInfo] })
@@ -1147,22 +1308,16 @@ function RuleEditor({
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
             规则别名 <span className="text-destructive">*</span>
-            <FieldTooltip content="规则的描述性名称，如针对***专项" />
           </Label>
           <Input
             placeholder="请输入规则别名"
             value={rule.ruleAlias}
             onChange={(e) => onUpdate({ ruleAlias: e.target.value })}
-            className="bg-secondary border-0"
           />
         </div>
         <div className="space-y-2">
           <Label>规则编号</Label>
-          <Input
-            value={rule.ruleId}
-            disabled
-            className="bg-secondary border-0 font-mono"
-          />
+          <Input value={rule.ruleId} disabled className="font-mono" />
         </div>
       </div>
 
@@ -1175,7 +1330,6 @@ function RuleEditor({
             type="datetime-local"
             value={rule.startTime.replace(" ", "T")}
             onChange={(e) => onUpdate({ startTime: e.target.value.replace("T", " ") })}
-            className="bg-secondary border-0"
           />
         </div>
         <div className="space-y-2">
@@ -1186,7 +1340,6 @@ function RuleEditor({
             type="datetime-local"
             value={rule.endTime.replace(" ", "T")}
             onChange={(e) => onUpdate({ endTime: e.target.value.replace("T", " ") })}
-            className="bg-secondary border-0"
           />
         </div>
       </div>
@@ -1195,7 +1348,6 @@ function RuleEditor({
       <div className="space-y-3">
         <Label className="flex items-center gap-2">
           流量发送方式 <span className="text-destructive">*</span>
-          <FieldTooltip content="可多选，多种方式用逗号分隔" />
         </Label>
         <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
           {Object.entries(TrafficReportType).map(([key, label]) => (
@@ -1206,7 +1358,7 @@ function RuleEditor({
                 "flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-colors",
                 rule.trafficReportType.includes(key)
                   ? "border-primary bg-primary/10"
-                  : "border-border bg-secondary/50 hover:bg-secondary"
+                  : "border-border hover:bg-muted"
               )}
             >
               <Checkbox checked={rule.trafficReportType.includes(key)} />
@@ -1216,58 +1368,41 @@ function RuleEditor({
         </div>
       </div>
 
-      {/* PCAP相关参数 */}
+      {/* PCAP参数 */}
       {needStorageAmount && (
-        <Card className="bg-secondary/20 border-border">
+        <Card className="bg-muted/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">PCAP参数配置</CardTitle>
-            <CardDescription>当流量发送方式包含PCAP文件时必填</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  流量总量(MB) <span className="text-destructive">*</span>
-                  <FieldTooltip content="系统筛选流量的总大小，为空则持续采集" />
-                </Label>
-                <Input
-                  type="number"
-                  placeholder="留空表示持续采集"
-                  value={rule.storageAmount || ""}
-                  onChange={(e) => onUpdate({ storageAmount: e.target.value ? Number(e.target.value) : undefined })}
-                  className="bg-secondary border-0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  PCAP文件存储时长 <span className="text-destructive">*</span>
-                </Label>
-                <Select 
-                  value={String(rule.saveTime)} 
-                  onValueChange={(v) => onUpdate({ saveTime: Number(v) })}
-                >
-                  <SelectTrigger className="bg-secondary border-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(SaveTime).map(([key, label]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>流量总量(MB)</Label>
+              <Input
+                type="number"
+                placeholder="留空表示持续采集"
+                value={rule.storageAmount || ""}
+                onChange={(e) => onUpdate({ storageAmount: e.target.value ? Number(e.target.value) : undefined })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>PCAP文件存储时长 <span className="text-destructive">*</span></Label>
+              <Select value={String(rule.saveTime)} onValueChange={(v) => onUpdate({ saveTime: Number(v) })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(SaveTime).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* 筛选后流量用途 */}
+      {/* 流量用途 */}
       {needOutputType && (
         <div className="space-y-3">
-          <Label className="flex items-center gap-2">
-            筛选后流量用途 <span className="text-destructive">*</span>
-            <FieldTooltip content={rule.trafficReportType.includes("5") ? "生成网络行为日志时只能选择协议元数据或流日志" : "可多选"} />
-          </Label>
+          <Label>筛选后流量用途 <span className="text-destructive">*</span></Label>
           <div className="flex flex-wrap gap-2">
             {Object.entries(outputTypeOptions).map(([key, label]) => (
               <Badge
@@ -1283,58 +1418,17 @@ function RuleEditor({
         </div>
       )}
 
-      {/* 前N包缓存 */}
-      <div className="space-y-4 p-4 rounded-lg bg-secondary/30">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="flex items-center gap-2">
-              前N包缓存
-              <FieldTooltip content="开启后需要配置缓存N值，默认为8" />
-            </Label>
-            <p className="text-xs text-muted-foreground mt-1">缺省为关闭</p>
-          </div>
-          <Switch
-            checked={rule.firstNBuffer === "1"}
-            onCheckedChange={(checked) => onUpdate({ firstNBuffer: checked ? "1" : "0" })}
-          />
-        </div>
-        
-        {rule.firstNBuffer === "1" && (
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              缓存前N包N值 <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              type="number"
-              value={rule.nBuffer}
-              onChange={(e) => onUpdate({ nBuffer: Number(e.target.value) })}
-              className="bg-secondary border-0 max-w-xs"
-              min={1}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* 采样比配置 */}
-      <Card className="bg-secondary/20 border-border">
+      {/* 采样比 */}
+      <Card className="bg-muted/30">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">采样比配置</CardTitle>
-          <CardDescription>根据数据输出方式自动显示对应采样比选项</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {needTrafficSampling && (
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                筛选流量采样比 <span className="text-destructive">*</span>
-                <FieldTooltip content="当数据输出方式非轮巡、非前N包时必填" />
-              </Label>
-              <Select 
-                value={String(rule.trafficSamplingRatio)} 
-                onValueChange={(v) => onUpdate({ trafficSamplingRatio: Number(v) })}
-              >
-                <SelectTrigger className="bg-secondary border-0 max-w-xs">
-                  <SelectValue />
-                </SelectTrigger>
+              <Label>筛选流量采样比 <span className="text-destructive">*</span></Label>
+              <Select value={String(rule.trafficSamplingRatio)} onValueChange={(v) => onUpdate({ trafficSamplingRatio: Number(v) })}>
+                <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(TrafficSamplingRatio).map(([key, label]) => (
                     <SelectItem key={key} value={key}>{label}</SelectItem>
@@ -1343,66 +1437,11 @@ function RuleEditor({
               </Select>
             </div>
           )}
-
-          {needPollingSampling && (
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                轮巡流量采样比
-                <FieldTooltip content="仅当数据输出方式为轮巡时可选" />
-              </Label>
-              <Select 
-                value={String(rule.pollingSamplingRatio || "")} 
-                onValueChange={(v) => onUpdate({ pollingSamplingRatio: v ? Number(v) : undefined })}
-              >
-                <SelectTrigger className="bg-secondary border-0 max-w-xs">
-                  <SelectValue placeholder="选择采样比（可选）" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">不设置</SelectItem>
-                  {Object.entries(PollingSamplingRatio).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {needPackageNSampling && (
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                前N包输出采样比
-                <FieldTooltip content="仅当数据输出方式为前N包输出时可选" />
-              </Label>
-              <Select 
-                value={String(rule.packageNSamplingRatio || "")} 
-                onValueChange={(v) => onUpdate({ packageNSamplingRatio: v ? Number(v) : undefined })}
-              >
-                <SelectTrigger className="bg-secondary border-0 max-w-xs">
-                  <SelectValue placeholder="选择采样比（可选）" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">不设置</SelectItem>
-                  {Object.entries(PollingSamplingRatio).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           {needNetflowSampling && (
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                流日志采样比 <span className="text-destructive">*</span>
-                <FieldTooltip content="当流量发送方式包含生成网络行为日志时必填" />
-              </Label>
-              <Select 
-                value={String(rule.netflowSamplingRatio)} 
-                onValueChange={(v) => onUpdate({ netflowSamplingRatio: Number(v) })}
-              >
-                <SelectTrigger className="bg-secondary border-0 max-w-xs">
-                  <SelectValue />
-                </SelectTrigger>
+              <Label>流日志采样比 <span className="text-destructive">*</span></Label>
+              <Select value={String(rule.netflowSamplingRatio)} onValueChange={(v) => onUpdate({ netflowSamplingRatio: Number(v) })}>
+                <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(NetflowSamplingRatio).map(([key, label]) => (
                     <SelectItem key={key} value={key}>{label}</SelectItem>
@@ -1414,16 +1453,16 @@ function RuleEditor({
         </CardContent>
       </Card>
 
-      {/* 规则内容配置 */}
-      <Card className="bg-secondary/20 border-border">
+      {/* 规则内容 */}
+      <Card className="bg-muted/30">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-sm">规则内容 (ruleInfo)</CardTitle>
-              <CardDescription>配置具体的匹配规则，支持组合规则</CardDescription>
+              <CardDescription>配置具体的匹配规则</CardDescription>
             </div>
             <Select onValueChange={(v) => addRuleInfo(Number(v))}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="添加规则类型" />
               </SelectTrigger>
               <SelectContent>
@@ -1436,8 +1475,8 @@ function RuleEditor({
         </CardHeader>
         <CardContent className="space-y-4">
           {rule.ruleInfo.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              暂无规则内容，请从上方下拉框添加规则类型
+            <div className="text-center py-6 text-muted-foreground">
+              暂无规则内容，请从上方下拉框添加
             </div>
           ) : (
             rule.ruleInfo.map((info, index) => (
@@ -1468,11 +1507,10 @@ function RuleInfoEditor({
   onUpdate: (updates: Partial<RuleInfo>) => void
   onRemove: () => void
 }) {
-  const requiredFields = getRuleRequiredFields(ruleInfo.ruleType)
   const ruleTypeName = RuleType[ruleInfo.ruleType as keyof typeof RuleType]
 
   return (
-    <Card className="bg-card border-border">
+    <Card className="bg-card">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1490,71 +1528,24 @@ function RuleInfoEditor({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>源IP</Label>
-              <Input
-                placeholder="例: 192.168.1.1"
-                value={ruleInfo.srcIp || ""}
-                onChange={(e) => onUpdate({ srcIp: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Input placeholder="例: 192.168.1.1" value={ruleInfo.srcIp || ""} onChange={(e) => onUpdate({ srcIp: e.target.value })} />
             </div>
-            {ruleInfo.ruleType === 2 && (
-              <div className="space-y-2">
-                <Label>源IP掩码</Label>
-                <Input
-                  placeholder="例: 255.255.255.0 或 /24"
-                  value={ruleInfo.srcIpMask || ""}
-                  onChange={(e) => onUpdate({ srcIpMask: e.target.value })}
-                  className="bg-secondary border-0"
-                />
-              </div>
-            )}
             <div className="space-y-2">
               <Label>目的IP</Label>
-              <Input
-                placeholder="例: 10.0.0.1"
-                value={ruleInfo.dstIp || ""}
-                onChange={(e) => onUpdate({ dstIp: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Input placeholder="例: 10.0.0.1" value={ruleInfo.dstIp || ""} onChange={(e) => onUpdate({ dstIp: e.target.value })} />
             </div>
-            {ruleInfo.ruleType === 2 && (
-              <div className="space-y-2">
-                <Label>目的IP掩码</Label>
-                <Input
-                  placeholder="例: 255.255.255.0 或 /24"
-                  value={ruleInfo.dstIpMask || ""}
-                  onChange={(e) => onUpdate({ dstIpMask: e.target.value })}
-                  className="bg-secondary border-0"
-                />
-              </div>
-            )}
             <div className="space-y-2">
               <Label>源端口</Label>
-              <Input
-                placeholder="例: 80"
-                value={ruleInfo.srcPort || ""}
-                onChange={(e) => onUpdate({ srcPort: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Input placeholder="例: 80" value={ruleInfo.srcPort || ""} onChange={(e) => onUpdate({ srcPort: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label>目的端口</Label>
-              <Input
-                placeholder="例: 443"
-                value={ruleInfo.dstPort || ""}
-                onChange={(e) => onUpdate({ dstPort: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Input placeholder="例: 443" value={ruleInfo.dstPort || ""} onChange={(e) => onUpdate({ dstPort: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label>传输层协议</Label>
-              <Select 
-                value={String(ruleInfo.protocolType || "")} 
-                onValueChange={(v) => onUpdate({ protocolType: v ? Number(v) : undefined })}
-              >
-                <SelectTrigger className="bg-secondary border-0">
-                  <SelectValue placeholder="选择协议" />
-                </SelectTrigger>
+              <Select value={String(ruleInfo.protocolType || "")} onValueChange={(v) => onUpdate({ protocolType: v ? Number(v) : undefined })}>
+                <SelectTrigger><SelectValue placeholder="选择协议" /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(TransportProtocols).map(([key, label]) => (
                     <SelectItem key={key} value={key}>{label}</SelectItem>
@@ -1564,207 +1555,67 @@ function RuleInfoEditor({
             </div>
           </div>
         )}
-
+        {/* 特征码规则 */}
+        {(ruleInfo.ruleType === 3 || ruleInfo.ruleType === 4 || ruleInfo.ruleType === 6) && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>特征码 <span className="text-destructive">*</span></Label>
+              <Input placeholder="十六进制特征码" value={ruleInfo.udValue || ""} onChange={(e) => onUpdate({ udValue: e.target.value })} />
+            </div>
+            {ruleInfo.ruleType === 3 && (
+              <div className="space-y-2">
+                <Label>偏移量 <span className="text-destructive">*</span></Label>
+                <Input type="number" placeholder="偏移位置" value={ruleInfo.offset || ""} onChange={(e) => onUpdate({ offset: Number(e.target.value) })} />
+              </div>
+            )}
+          </div>
+        )}
         {/* CS规则 */}
         {ruleInfo.ruleType === 7 && (
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                客户端IP <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="客户端IP地址"
-                value={ruleInfo.clientIp || ""}
-                onChange={(e) => onUpdate({ clientIp: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Label>客户端IP <span className="text-destructive">*</span></Label>
+              <Input placeholder="例: 192.168.0.0/16" value={ruleInfo.clientIp || ""} onChange={(e) => onUpdate({ clientIp: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                服务端IP <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="服务端IP地址"
-                value={ruleInfo.serverIp || ""}
-                onChange={(e) => onUpdate({ serverIp: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Label>服务端IP <span className="text-destructive">*</span></Label>
+              <Input placeholder="例: 10.0.0.0/8" value={ruleInfo.serverIp || ""} onChange={(e) => onUpdate({ serverIp: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                服务端口 <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="服务端口"
-                value={ruleInfo.serverPort || ""}
-                onChange={(e) => onUpdate({ serverPort: e.target.value })}
-                className="bg-secondary border-0"
-              />
+              <Label>服务端口 <span className="text-destructive">*</span></Label>
+              <Input placeholder="例: 80,443" value={ruleInfo.serverPort || ""} onChange={(e) => onUpdate({ serverPort: e.target.value })} />
             </div>
           </div>
         )}
-
         {/* Host规则 */}
         {ruleInfo.ruleType === 8 && (
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              Host <span className="text-destructive">*</span>
-              <FieldTooltip content="支持通配符，如 *.baidu.com" />
-            </Label>
-            <Input
-              placeholder="例: *.baidu.com"
-              value={ruleInfo.host || ""}
-              onChange={(e) => onUpdate({ host: e.target.value })}
-              className="bg-secondary border-0"
-            />
+            <Label>Host <span className="text-destructive">*</span></Label>
+            <Input placeholder="例: *.example.com" value={ruleInfo.host || ""} onChange={(e) => onUpdate({ host: e.target.value })} />
           </div>
         )}
-
         {/* SNI规则 */}
         {ruleInfo.ruleType === 9 && (
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              SNI <span className="text-destructive">*</span>
-              <FieldTooltip content="HTTPS报文中的SNI，支持通配符" />
-            </Label>
-            <Input
-              placeholder="例: *.example.com"
-              value={ruleInfo.sni || ""}
-              onChange={(e) => onUpdate({ sni: e.target.value })}
-              className="bg-secondary border-0"
-            />
+            <Label>SNI <span className="text-destructive">*</span></Label>
+            <Input placeholder="例: *.target.cn" value={ruleInfo.sni || ""} onChange={(e) => onUpdate({ sni: e.target.value })} />
           </div>
         )}
-
         {/* URL规则 */}
         {ruleInfo.ruleType === 10 && (
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              URL <span className="text-destructive">*</span>
-            </Label>
-            <Textarea
-              placeholder="输入URL"
-              value={ruleInfo.url || ""}
-              onChange={(e) => onUpdate({ url: e.target.value })}
-              className="bg-secondary border-0"
-            />
+            <Label>URL <span className="text-destructive">*</span></Label>
+            <Input placeholder="例: /api/v1/*" value={ruleInfo.url || ""} onChange={(e) => onUpdate({ url: e.target.value })} />
           </div>
         )}
-
         {/* 应用协议规则 */}
         {ruleInfo.ruleType === 11 && (
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              应用层协议类型 <span className="text-destructive">*</span>
-            </Label>
-            <Select 
-              value={String(ruleInfo.applicationProtocol || "")} 
-              onValueChange={(v) => onUpdate({ applicationProtocol: Number(v) })}
-            >
-              <SelectTrigger className="bg-secondary border-0 max-w-xs">
-                <SelectValue placeholder="选择应用协议" />
-              </SelectTrigger>
+            <Label>应用协议 <span className="text-destructive">*</span></Label>
+            <Select value={String(ruleInfo.applicationProtocol || "")} onValueChange={(v) => onUpdate({ applicationProtocol: Number(v) })}>
+              <SelectTrigger><SelectValue placeholder="选择应用协议" /></SelectTrigger>
               <SelectContent>
                 {Object.entries(ApplicationProtocols).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        {/* 特征码规则 */}
-        {(ruleInfo.ruleType === 3 || ruleInfo.ruleType === 4 || ruleInfo.ruleType === 6) && (
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  特征码 <span className="text-destructive">*</span>
-                  <FieldTooltip content="十六进制值组成的字符串，长度3-32字节" />
-                </Label>
-                <Textarea
-                  placeholder="例: 48 54 54 50"
-                  value={ruleInfo.udValue || ""}
-                  onChange={(e) => onUpdate({ udValue: e.target.value })}
-                  className="bg-secondary border-0 font-mono"
-                />
-              </div>
-              {ruleInfo.ruleType === 3 && (
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    偏移量 <span className="text-destructive">*</span>
-                    <FieldTooltip content="取值范围[0, 包长-1]" />
-                  </Label>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    value={ruleInfo.offset || ""}
-                    onChange={(e) => onUpdate({ offset: Number(e.target.value) })}
-                    className="bg-secondary border-0"
-                    min={0}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>特征码匹配模式</Label>
-                <Select 
-                  value={String(ruleInfo.udValueMatchMode || 0)} 
-                  onValueChange={(v) => onUpdate({ udValueMatchMode: Number(v) })}
-                >
-                  <SelectTrigger className="bg-secondary border-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(UdValueMatchMode).map(([key, label]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {ruleInfo.ruleType === 3 && (
-                <div className="space-y-2">
-                  <Label>跨包匹配标识</Label>
-                  <Select 
-                    value={String(ruleInfo.crossPkgMatch || 0)} 
-                    onValueChange={(v) => onUpdate({ crossPkgMatch: Number(v) })}
-                  >
-                    <SelectTrigger className="bg-secondary border-0">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(CrossPkgMatch).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 无规则 */}
-        {ruleInfo.ruleType === 0 && (
-          <div className="text-center py-4 text-muted-foreground">
-            无规则：匹配全部流量
-          </div>
-        )}
-
-        {/* 通用可选字段：隧道匹配方式 */}
-        {(ruleInfo.ruleType === 1 || ruleInfo.ruleType === 2) && (
-          <div className="space-y-2">
-            <Label>隧道协议匹配方式</Label>
-            <Select 
-              value={String(ruleInfo.tunnelMatchType || 0)} 
-              onValueChange={(v) => onUpdate({ tunnelMatchType: Number(v) })}
-            >
-              <SelectTrigger className="bg-secondary border-0 max-w-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(TunnelMatchType).map(([key, label]) => (
                   <SelectItem key={key} value={key}>{label}</SelectItem>
                 ))}
               </SelectContent>
@@ -1778,160 +1629,111 @@ function RuleInfoEditor({
 
 // ==================== 步骤7: 校验发布 ====================
 function StepReview({ formData }: { formData: typeof initialFormData }) {
+  const selectedInputGroup = mockPortGroups.find(g => g.id === formData.inputPortGroup)
+  const selectedOutputGroup = mockPortGroups.find(g => g.id === formData.outputPortGroup)
+
   return (
     <div className="space-y-6">
-      {/* 校验结果 */}
-      <div className="flex items-start gap-3 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-        <Check className="h-5 w-5 text-green-500 mt-0.5" />
-        <div>
-          <p className="font-medium text-green-500">指令校验通过</p>
-          <p className="text-sm text-muted-foreground">所有必填字段已完成，指令配置有效</p>
+      <div className="flex items-start gap-2 p-4 rounded-lg bg-success/10 border border-success/20">
+        <Check className="h-5 w-5 text-success mt-0.5" />
+        <div className="text-sm">
+          <p className="font-medium text-success">配置校验通过</p>
+          <p className="text-muted-foreground">请确认以下配置信息，确认无误后点击"发布指令"</p>
         </div>
       </div>
 
-      {/* 指令摘要 */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="bg-secondary/30 border-border">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">指令基本信息</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">指令ID</span>
-              <span className="font-mono">{formData.commandId}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">指令来源</span>
-              <span>{CommandSource[formData.commandSource as keyof typeof CommandSource]}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">优先级</span>
-              <span>{CommandLevel[formData.level as keyof typeof CommandLevel]}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">属主</span>
-              <span>{formData.owner}</span>
-            </div>
+            <div className="flex justify-between"><span className="text-muted-foreground">指令ID</span><span className="font-mono">{formData.commandId}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">指令来源</span><span>{CommandSource[formData.commandSource as keyof typeof CommandSource]}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">优先级</span><span>{CommandLevel[formData.level as keyof typeof CommandLevel]}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">属主</span><span>{formData.owner}</span></div>
           </CardContent>
         </Card>
 
-        <Card className="bg-secondary/30 border-border">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">指令对象</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Network className="h-4 w-4 text-primary" />
+              输入端口组
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">运营商</span>
-              <span>{OperatorCodes[formData.comCode as keyof typeof OperatorCodes] || "-"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">生效系统</span>
-              <span>{formData.effectSystem.map(s => SystemType[Number(s) as keyof typeof SystemType]).join("、")}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">生效省份</span>
-              <span>{formData.effectProvince.length} 个</span>
-            </div>
+            {selectedInputGroup ? (
+              <>
+                <div className="flex justify-between"><span className="text-muted-foreground">端口组</span><span>{selectedInputGroup.name}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">设备</span><span>{selectedInputGroup.device}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">运营商</span><span>{OperatorCodes[selectedInputGroup.comCode as keyof typeof OperatorCodes]}</span></div>
+              </>
+            ) : (
+              <p className="text-muted-foreground">未选择</p>
+            )}
           </CardContent>
         </Card>
 
-        <Card className="bg-secondary/30 border-border">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">指令场景配置</CardTitle>
+            <CardTitle className="text-sm">指令场景与输出</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">指令场景</span>
-              <span>{CommandScene[formData.commandScene as keyof typeof CommandScene]}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">数据输出方式</span>
-              <span>{DataOutputMethod[formData.dataOutputMethod as keyof typeof DataOutputMethod]}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">统计功能</span>
-              <span>{formData.onlyCount === 1 ? "开启" : "关闭"}</span>
-            </div>
+            <div className="flex justify-between"><span className="text-muted-foreground">指令场景</span><span>{CommandScene[formData.commandScene as keyof typeof CommandScene]}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">数据输出方式</span><span>{DataOutputMethod[formData.dataOutputMethod as keyof typeof DataOutputMethod]}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">结果处理</span><span>{HandleType[formData.handleType as keyof typeof HandleType]}</span></div>
           </CardContent>
         </Card>
 
-        <Card className="bg-secondary/30 border-border">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">规则配置</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Zap className="h-4 w-4 text-info" />
+              输出端口组
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">规则数量</span>
-              <span>{formData.rules.length} 条</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">规则内容总数</span>
-              <span>{formData.rules.reduce((acc, r) => acc + r.ruleInfo.length, 0)} 个</span>
-            </div>
+            {selectedOutputGroup ? (
+              <>
+                <div className="flex justify-between"><span className="text-muted-foreground">端口组</span><span>{selectedOutputGroup.name}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">设备</span><span>{selectedOutputGroup.device}</span></div>
+              </>
+            ) : (
+              <p className="text-muted-foreground">未选择</p>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* 规则列表 */}
-      {formData.rules.length > 0 && (
-        <Card className="bg-secondary/30 border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">规则列表</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {formData.rules.map((rule, index) => (
-                <div key={rule.id} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">规则配置 ({formData.rules.length} 条)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {formData.rules.map((rule, index) => (
+              <div key={rule.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-3">
                   <Badge variant="outline">{index + 1}</Badge>
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">{rule.ruleAlias}</div>
+                  <div>
+                    <div className="font-medium text-sm">{rule.ruleAlias || "未命名"}</div>
                     <div className="text-xs text-muted-foreground">
-                      {rule.trafficReportType.map(t => TrafficReportType[Number(t) as keyof typeof TrafficReportType]).join("、")}
-                      {" | "}
-                      {rule.ruleInfo.length} 个规则内容
-                      {" | "}
-                      {rule.startTime} ~ {rule.endTime}
+                      {rule.ruleInfo.length} 条规则内容 | {rule.trafficReportType.length > 0 ? rule.trafficReportType.map(t => TrafficReportType[Number(t) as keyof typeof TrafficReportType]).join("、") : "未配置发送方式"}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 关联反馈数据项 */}
-      <Card className="bg-secondary/30 border-border">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">关联指令反馈数据项</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2 md:grid-cols-2 text-sm">
-            <div className="p-2 rounded bg-secondary/50">A.13.3 公共互联网前N包结果数据上报</div>
-            <div className="p-2 rounded bg-secondary/50">A.13.4 公共互联网DNS安全监测结果数据上报</div>
-            <div className="p-2 rounded bg-secondary/50">B.2.4 公共互联网流日志上报</div>
-            <div className="p-2 rounded bg-secondary/50">B.11.1 公共互联网网络应用和协议元数据监测上报</div>
-            <div className="p-2 rounded bg-secondary/50">C.1.13 公共互联网动态筛选流量PCAP记录上报</div>
-            <div className="p-2 rounded bg-secondary/50">F.1.51 公共互联网动态流量获取统计信息反馈</div>
+                {rule.fromPolicy && (
+                  <Badge variant="secondary" className="text-xs">
+                    <Link2 className="h-3 w-3 mr-1" />
+                    策略库
+                  </Badge>
+                )}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
     </div>
-  )
-}
-
-// 字段提示组件
-function FieldTooltip({ content }: { content: string }) {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="max-w-xs text-xs">{content}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   )
 }
