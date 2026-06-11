@@ -9,7 +9,7 @@ import {
   Network,
   FileSearch,
   BookOpen,
-  Link2,
+  Layers,
   Upload,
   ChevronDown,
   Activity,
@@ -35,14 +35,14 @@ const navItems = [
     icon: FileSearch,
   },
   {
-    title: "规则库",
+    title: "规则策略库",
     href: "/rules",
     icon: BookOpen,
   },
   {
-    title: "链路管理",
+    title: "端口组管理",
     href: "/links",
-    icon: Link2,
+    icon: Layers,
   },
   {
     title: "上报记录",
@@ -62,7 +62,7 @@ export function AppSidebar() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 lg:hidden"
+        className="fixed top-4 left-4 z-50 lg:hidden text-primary-foreground hover:bg-sidebar-accent"
         onClick={() => setMobileOpen(!mobileOpen)}
       >
         {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -90,13 +90,13 @@ export function AppSidebar() {
             "flex items-center gap-3 border-b border-sidebar-border px-4 h-14",
             collapsed && "justify-center px-2"
           )}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Activity className="h-4 w-4 text-primary-foreground" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
+              <Activity className="h-4 w-4 text-sidebar-primary-foreground" />
             </div>
             {!collapsed && (
               <div className="flex flex-col">
                 <span className="text-sm font-semibold text-sidebar-foreground">基础采集</span>
-                <span className="text-[10px] text-muted-foreground">能力平台</span>
+                <span className="text-[10px] text-sidebar-foreground/70">能力平台</span>
               </div>
             )}
           </div>
@@ -113,12 +113,12 @@ export function AppSidebar() {
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-primary"
+                      ? "bg-sidebar-accent text-sidebar-foreground"
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     collapsed && "justify-center px-2"
                   )}
                 >
-                  <item.icon className={cn("h-4 w-4 shrink-0", isActive && "text-sidebar-primary")} />
+                  <item.icon className={cn("h-4 w-4 shrink-0", isActive && "text-sidebar-foreground")} />
                   {!collapsed && <span>{item.title}</span>}
                 </Link>
               )
@@ -131,7 +131,7 @@ export function AppSidebar() {
               variant="ghost"
               size="sm"
               className={cn(
-                "w-full justify-center text-muted-foreground hover:text-foreground",
+                "w-full justify-center text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent",
                 !collapsed && "justify-start"
               )}
               onClick={() => setCollapsed(!collapsed)}

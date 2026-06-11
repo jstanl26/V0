@@ -34,12 +34,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Plus,
   Search,
-  Filter,
   MoreHorizontal,
   Play,
   Pause,
@@ -51,128 +49,173 @@ import {
   RefreshCw,
   ArrowUpDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileJson,
+  AlertCircle,
+  CheckCircle,
+  Clock
 } from "lucide-react"
+import {
+  CommandSource,
+  CommandLevel,
+  CommandScene,
+  DataOutputMethod,
+  TrafficReportType,
+  RuleType,
+  OperatorCodes,
+} from "@/lib/command-types"
 
-// 模拟任务数据
-const tasksData = [
+// 模拟指令数据 - 符合 F.1.35 规范
+const commandsData = [
   {
-    id: "T-20240115-001",
-    source: "国家侧",
-    name: "省网出口HTTP监测",
-    link: "LK-PROV-01",
-    ruleType: "五元组+Host",
-    sampling: "Hash 1:100",
-    outputTarget: "全流量检测",
+    commandId: 10001,
+    commandSource: 1,
+    level: 1,
+    owner: "admin",
+    createTime: "2024-01-15 14:32:18",
+    operationType: 0,
+    comCode: "0010",
+    effectProvince: ["110000", "310000", "440000"],
+    commandScene: 0,
+    dataOutputMethod: 4,
+    rulesCount: 3,
+    ruleTypes: [1, 8], // 五元组+Host
     status: "running",
-    hitTraffic: "12.5K/s",
-    updateTime: "2024-01-15 14:32:18",
+    hitTraffic: "12.5 Gbps",
     reportStatus: "success"
   },
   {
-    id: "T-20240115-002",
-    source: "国家侧",
-    name: "城域网加密流量采集",
-    link: "LK-CITY-03",
-    ruleType: "SNI+特征码",
-    sampling: "Hash 1:50",
-    outputTarget: "加密流量检测",
+    commandId: 10002,
+    commandSource: 1,
+    level: 2,
+    owner: "operator1",
+    createTime: "2024-01-15 14:30:05",
+    operationType: 0,
+    comCode: "0011",
+    effectProvince: ["320000", "330000"],
+    commandScene: 1,
+    dataOutputMethod: 0,
+    rulesCount: 2,
+    ruleTypes: [9, 3], // SNI+特征码
     status: "running",
-    hitTraffic: "8.2K/s",
-    updateTime: "2024-01-15 14:30:05",
+    hitTraffic: "8.2 Gbps",
     reportStatus: "success"
   },
   {
-    id: "T-20240115-003",
-    source: "省级",
-    name: "DNS流量分析任务",
-    link: "LK-PROV-02",
-    ruleType: "协议头",
-    sampling: "轮巡 10ms",
-    outputTarget: "协议元数据",
+    commandId: 10003,
+    commandSource: 2,
+    level: 2,
+    owner: "analyst",
+    createTime: "2024-01-15 14:28:42",
+    operationType: 0,
+    comCode: "0013",
+    effectProvince: ["510000"],
+    commandScene: 2,
+    dataOutputMethod: 5,
+    rulesCount: 1,
+    ruleTypes: [11], // 应用协议
     status: "running",
-    hitTraffic: "5.6K/s",
-    updateTime: "2024-01-15 14:28:42",
+    hitTraffic: "5.6 Gbps",
     reportStatus: "success"
   },
   {
-    id: "T-20240114-018",
-    source: "国家侧",
-    name: "特定应用检测任务",
-    link: "LK-PROV-01",
-    ruleType: "URL+特征码",
-    sampling: "Hash 1:200",
-    outputTarget: "特定应用检测",
+    commandId: 10004,
+    commandSource: 1,
+    level: 1,
+    owner: "admin",
+    createTime: "2024-01-14 23:15:30",
+    operationType: 0,
+    comCode: "0010",
+    effectProvince: ["440000", "450000"],
+    commandScene: 1,
+    dataOutputMethod: 1,
+    rulesCount: 4,
+    ruleTypes: [10, 3], // URL+特征码
     status: "paused",
-    hitTraffic: "0/s",
-    updateTime: "2024-01-14 23:15:30",
+    hitTraffic: "0 Gbps",
     reportStatus: "pending"
   },
   {
-    id: "T-20240114-015",
-    source: "省级",
-    name: "异常包识别任务",
-    link: "LK-CITY-01",
-    ruleType: "异常包",
-    sampling: "无采样",
-    outputTarget: "前N包检测",
+    commandId: 10005,
+    commandSource: 2,
+    level: 3,
+    owner: "monitor",
+    createTime: "2024-01-14 18:45:22",
+    operationType: 0,
+    comCode: "0011",
+    effectProvince: ["610000", "620000", "630000"],
+    commandScene: 2,
+    dataOutputMethod: 5,
+    rulesCount: 2,
+    ruleTypes: [0], // 无规则
     status: "running",
-    hitTraffic: "3.2K/s",
-    updateTime: "2024-01-14 18:45:22",
+    hitTraffic: "3.2 Gbps",
     reportStatus: "success"
   },
   {
-    id: "T-20240114-012",
-    source: "国家侧",
-    name: "HTTPS流量筛选",
-    link: "LK-PROV-03",
-    ruleType: "CS+SNI",
-    sampling: "Hash 1:100",
-    outputTarget: "PCAP提取",
+    commandId: 10006,
+    commandSource: 1,
+    level: 1,
+    owner: "admin",
+    createTime: "2024-01-14 16:22:10",
+    operationType: 0,
+    comCode: "0010",
+    effectProvince: ["110000"],
+    commandScene: 1,
+    dataOutputMethod: 2,
+    rulesCount: 3,
+    ruleTypes: [7, 9], // CS+SNI
     status: "error",
-    hitTraffic: "0/s",
-    updateTime: "2024-01-14 16:22:10",
+    hitTraffic: "0 Gbps",
     reportStatus: "failed"
   },
   {
-    id: "T-20240114-008",
-    source: "省级",
-    name: "FTP文件还原任务",
-    link: "LK-CITY-02",
-    ruleType: "五元组",
-    sampling: "轮巡 5ms",
-    outputTarget: "文件还原",
+    commandId: 10007,
+    commandSource: 2,
+    level: 2,
+    owner: "operator2",
+    createTime: "2024-01-14 10:30:45",
+    operationType: 0,
+    comCode: "0013",
+    effectProvince: ["420000", "430000"],
+    commandScene: 0,
+    dataOutputMethod: 4,
+    rulesCount: 1,
+    ruleTypes: [1], // 五元组
     status: "running",
-    hitTraffic: "1.8K/s",
-    updateTime: "2024-01-14 10:30:45",
+    hitTraffic: "1.8 Gbps",
     reportStatus: "success"
   },
   {
-    id: "T-20240113-025",
-    source: "国家侧",
-    name: "SSH流量监测",
-    link: "LK-PROV-02",
-    ruleType: "协议头+特征码",
-    sampling: "Hash 1:50",
-    outputTarget: "流日志",
+    commandId: 10008,
+    commandSource: 1,
+    level: 2,
+    owner: "admin",
+    createTime: "2024-01-13 22:00:00",
+    operationType: 0,
+    comCode: "0010",
+    effectProvince: ["310000", "320000", "330000", "340000"],
+    commandScene: 1,
+    dataOutputMethod: 3,
+    rulesCount: 5,
+    ruleTypes: [2, 3], // 掩码五元组+特征码
     status: "completed",
     hitTraffic: "-",
-    updateTime: "2024-01-13 22:00:00",
     reportStatus: "success"
   },
 ]
 
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  running: { label: "运行中", variant: "default" },
-  paused: { label: "已暂停", variant: "secondary" },
-  error: { label: "异常", variant: "destructive" },
-  completed: { label: "已完成", variant: "outline" },
+const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode }> = {
+  running: { label: "运行中", variant: "default", icon: <Play className="h-3 w-3" /> },
+  paused: { label: "已暂停", variant: "secondary", icon: <Pause className="h-3 w-3" /> },
+  error: { label: "异常", variant: "destructive", icon: <AlertCircle className="h-3 w-3" /> },
+  completed: { label: "已完成", variant: "outline", icon: <CheckCircle className="h-3 w-3" /> },
 }
 
-const reportStatusConfig: Record<string, { label: string; color: string }> = {
-  success: { label: "成功", color: "text-green-500" },
-  pending: { label: "待上报", color: "text-yellow-500" },
-  failed: { label: "失败", color: "text-red-500" },
+const reportStatusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  success: { label: "成功", color: "text-green-500", icon: <CheckCircle className="h-3 w-3" /> },
+  pending: { label: "待上报", color: "text-yellow-500", icon: <Clock className="h-3 w-3" /> },
+  failed: { label: "失败", color: "text-red-500", icon: <AlertCircle className="h-3 w-3" /> },
 }
 
 interface TrafficTaskListProps {
@@ -183,31 +226,42 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
   const [searchTerm, setSearchTerm] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("all")
   const [sourceFilter, setSourceFilter] = React.useState("all")
-  const [selectedTasks, setSelectedTasks] = React.useState<string[]>([])
+  const [sceneFilter, setSceneFilter] = React.useState("all")
+  const [selectedCommands, setSelectedCommands] = React.useState<number[]>([])
+  const [detailCommand, setDetailCommand] = React.useState<typeof commandsData[0] | null>(null)
 
-  const filteredTasks = tasksData.filter((task) => {
+  const filteredCommands = commandsData.filter((cmd) => {
     const matchesSearch = 
-      task.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      task.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || task.status === statusFilter
-    const matchesSource = sourceFilter === "all" || task.source === sourceFilter
-    return matchesSearch && matchesStatus && matchesSource
+      String(cmd.commandId).includes(searchTerm) ||
+      cmd.owner.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = statusFilter === "all" || cmd.status === statusFilter
+    const matchesSource = sourceFilter === "all" || String(cmd.commandSource) === sourceFilter
+    const matchesScene = sceneFilter === "all" || String(cmd.commandScene) === sceneFilter
+    return matchesSearch && matchesStatus && matchesSource && matchesScene
   })
 
-  const toggleTaskSelection = (taskId: string) => {
-    setSelectedTasks(prev => 
-      prev.includes(taskId) 
-        ? prev.filter(id => id !== taskId)
-        : [...prev, taskId]
+  const toggleCommandSelection = (commandId: number) => {
+    setSelectedCommands(prev => 
+      prev.includes(commandId) 
+        ? prev.filter(id => id !== commandId)
+        : [...prev, commandId]
     )
   }
 
   const toggleAllSelection = () => {
-    if (selectedTasks.length === filteredTasks.length) {
-      setSelectedTasks([])
+    if (selectedCommands.length === filteredCommands.length) {
+      setSelectedCommands([])
     } else {
-      setSelectedTasks(filteredTasks.map(t => t.id))
+      setSelectedCommands(filteredCommands.map(c => c.commandId))
     }
+  }
+
+  const getRuleTypesDisplay = (ruleTypes: number[]) => {
+    return ruleTypes.map(t => {
+      const name = RuleType[t as keyof typeof RuleType]
+      // 简化显示
+      return name?.replace("规则", "").replace("灵活", "").replace("固定位置", "固定").replace("全包浮动位置", "浮动") || t
+    }).join("+")
   }
 
   return (
@@ -215,8 +269,8 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
       {/* 页面标题和操作栏 */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">动态流量获取</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理采集任务，配置流量筛选规则</p>
+          <h1 className="text-2xl font-semibold text-foreground">动态流量获取指令管理</h1>
+          <p className="text-sm text-muted-foreground mt-1">F.1.35 公共互联网动态流量获取指令下发</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">
@@ -225,39 +279,45 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
           </Button>
           <Button variant="outline" size="sm">
             <Download className="h-4 w-4 mr-2" />
-            导出任务
+            导出指令
           </Button>
           <Button size="sm" onClick={onCreateTask}>
             <Plus className="h-4 w-4 mr-2" />
-            新建任务
+            新建指令
           </Button>
         </div>
       </div>
 
       {/* 统计卡片 */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
         <Card className="bg-card border-border">
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold">{tasksData.filter(t => t.status === "running").length}</div>
-            <div className="text-xs text-muted-foreground mt-1">运行中任务</div>
+            <div className="text-2xl font-bold">{commandsData.filter(c => c.status === "running").length}</div>
+            <div className="text-xs text-muted-foreground mt-1">运行中</div>
           </CardContent>
         </Card>
         <Card className="bg-card border-border">
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold">{tasksData.filter(t => t.status === "paused").length}</div>
-            <div className="text-xs text-muted-foreground mt-1">已暂停任务</div>
+            <div className="text-2xl font-bold">{commandsData.filter(c => c.status === "paused").length}</div>
+            <div className="text-xs text-muted-foreground mt-1">已暂停</div>
           </CardContent>
         </Card>
         <Card className="bg-card border-border">
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold">{tasksData.filter(t => t.status === "error").length}</div>
-            <div className="text-xs text-muted-foreground mt-1">异常任务</div>
+            <div className="text-2xl font-bold">{commandsData.filter(c => c.status === "error").length}</div>
+            <div className="text-xs text-muted-foreground mt-1">异常</div>
           </CardContent>
         </Card>
         <Card className="bg-card border-border">
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold">{tasksData.length}</div>
-            <div className="text-xs text-muted-foreground mt-1">总任务数</div>
+            <div className="text-2xl font-bold">{commandsData.filter(c => c.status === "completed").length}</div>
+            <div className="text-xs text-muted-foreground mt-1">已完成</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold">{commandsData.length}</div>
+            <div className="text-xs text-muted-foreground mt-1">总指令数</div>
           </CardContent>
         </Card>
       </div>
@@ -266,18 +326,18 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
       <Card className="bg-card border-border">
         <CardContent className="pt-4">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-1 items-center gap-4">
-              <div className="relative flex-1 max-w-sm">
+            <div className="flex flex-1 flex-wrap items-center gap-4">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="搜索任务编号或名称..."
+                  placeholder="搜索指令ID或属主..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9 bg-secondary border-0"
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32 bg-secondary border-0">
+                <SelectTrigger className="w-28 bg-secondary border-0">
                   <SelectValue placeholder="状态" />
                 </SelectTrigger>
                 <SelectContent>
@@ -290,20 +350,32 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
               </Select>
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
                 <SelectTrigger className="w-32 bg-secondary border-0">
-                  <SelectValue placeholder="来源" />
+                  <SelectValue placeholder="指令来源" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部来源</SelectItem>
-                  <SelectItem value="国家侧">国家侧</SelectItem>
-                  <SelectItem value="省级">省级</SelectItem>
+                  {Object.entries(CommandSource).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={sceneFilter} onValueChange={setSceneFilter}>
+                <SelectTrigger className="w-40 bg-secondary border-0">
+                  <SelectValue placeholder="指令场景" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部场景</SelectItem>
+                  {Object.entries(CommandScene).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              {selectedTasks.length > 0 && (
+              {selectedCommands.length > 0 && (
                 <>
                   <span className="text-sm text-muted-foreground">
-                    已选择 {selectedTasks.length} 项
+                    已选择 {selectedCommands.length} 项
                   </span>
                   <Button variant="outline" size="sm">
                     <Play className="h-4 w-4 mr-1" />
@@ -323,7 +395,7 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
         </CardContent>
       </Card>
 
-      {/* 任务列表表格 */}
+      {/* 指令列表表格 */}
       <Card className="bg-card border-border">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -333,69 +405,92 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
                   <TableHead className="w-12">
                     <input
                       type="checkbox"
-                      checked={selectedTasks.length === filteredTasks.length && filteredTasks.length > 0}
+                      checked={selectedCommands.length === filteredCommands.length && filteredCommands.length > 0}
                       onChange={toggleAllSelection}
                       className="rounded border-border"
                     />
                   </TableHead>
-                  <TableHead className="min-w-[120px]">
+                  <TableHead className="min-w-[100px]">
                     <Button variant="ghost" className="h-8 p-0 font-medium hover:bg-transparent">
-                      任务编号
+                      指令ID
                       <ArrowUpDown className="ml-2 h-3 w-3" />
                     </Button>
                   </TableHead>
-                  <TableHead className="min-w-[80px]">指令来源</TableHead>
-                  <TableHead className="min-w-[180px]">任务名称</TableHead>
-                  <TableHead className="min-w-[100px]">接入链路</TableHead>
+                  <TableHead className="min-w-[100px]">指令来源</TableHead>
+                  <TableHead className="min-w-[80px]">优先级</TableHead>
+                  <TableHead className="min-w-[80px]">属主</TableHead>
+                  <TableHead className="min-w-[80px]">运营商</TableHead>
+                  <TableHead className="min-w-[140px]">指令场景</TableHead>
+                  <TableHead className="min-w-[100px]">输出方式</TableHead>
                   <TableHead className="min-w-[120px]">规则类型</TableHead>
-                  <TableHead className="min-w-[100px]">采样方式</TableHead>
-                  <TableHead className="min-w-[120px]">输出目标</TableHead>
+                  <TableHead className="min-w-[60px]">规则数</TableHead>
                   <TableHead className="min-w-[80px]">状态</TableHead>
                   <TableHead className="min-w-[100px]">命中流量</TableHead>
+                  <TableHead className="min-w-[80px]">上报状态</TableHead>
                   <TableHead className="min-w-[160px]">
                     <Button variant="ghost" className="h-8 p-0 font-medium hover:bg-transparent">
-                      最近更新
+                      创建时间
                       <ArrowUpDown className="ml-2 h-3 w-3" />
                     </Button>
                   </TableHead>
-                  <TableHead className="min-w-[80px]">上报状态</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTasks.map((task) => (
-                  <TableRow key={task.id} className="border-border">
+                {filteredCommands.map((cmd) => (
+                  <TableRow key={cmd.commandId} className="border-border">
                     <TableCell>
                       <input
                         type="checkbox"
-                        checked={selectedTasks.includes(task.id)}
-                        onChange={() => toggleTaskSelection(task.id)}
+                        checked={selectedCommands.includes(cmd.commandId)}
+                        onChange={() => toggleCommandSelection(cmd.commandId)}
                         className="rounded border-border"
                       />
                     </TableCell>
-                    <TableCell className="font-mono text-sm">{task.id}</TableCell>
+                    <TableCell className="font-mono text-sm">{cmd.commandId}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
-                        {task.source}
+                        {CommandSource[cmd.commandSource as keyof typeof CommandSource]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-medium">{task.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{task.link}</TableCell>
-                    <TableCell className="text-muted-foreground">{task.ruleType}</TableCell>
-                    <TableCell className="text-muted-foreground">{task.sampling}</TableCell>
-                    <TableCell className="text-muted-foreground">{task.outputTarget}</TableCell>
                     <TableCell>
-                      <Badge variant={statusConfig[task.status]?.variant || "default"}>
-                        {statusConfig[task.status]?.label || task.status}
+                      <Badge 
+                        variant={cmd.level === 1 ? "destructive" : cmd.level === 2 ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {CommandLevel[cmd.level as keyof typeof CommandLevel]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-sm">{task.hitTraffic}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{task.updateTime}</TableCell>
+                    <TableCell className="text-muted-foreground">{cmd.owner}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {OperatorCodes[cmd.comCode as keyof typeof OperatorCodes]?.slice(2) || cmd.comCode}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {CommandScene[cmd.commandScene as keyof typeof CommandScene]}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {DataOutputMethod[cmd.dataOutputMethod as keyof typeof DataOutputMethod]?.slice(0, 6)}...
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <Badge variant="outline" className="text-xs font-mono">
+                        {getRuleTypesDisplay(cmd.ruleTypes)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">{cmd.rulesCount}</TableCell>
                     <TableCell>
-                      <span className={`text-sm ${reportStatusConfig[task.reportStatus]?.color}`}>
-                        {reportStatusConfig[task.reportStatus]?.label}
+                      <Badge variant={statusConfig[cmd.status]?.variant || "default"} className="gap-1">
+                        {statusConfig[cmd.status]?.icon}
+                        {statusConfig[cmd.status]?.label || cmd.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">{cmd.hitTraffic}</TableCell>
+                    <TableCell>
+                      <span className={`flex items-center gap-1 text-sm ${reportStatusConfig[cmd.reportStatus]?.color}`}>
+                        {reportStatusConfig[cmd.reportStatus]?.icon}
+                        {reportStatusConfig[cmd.reportStatus]?.label}
                       </span>
                     </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{cmd.createTime}</TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -406,34 +501,34 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>操作</DropdownMenuLabel>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setDetailCommand(cmd)}>
                             <Eye className="h-4 w-4 mr-2" />
                             查看详情
                           </DropdownMenuItem>
                           <DropdownMenuItem>
-                            <Eye className="h-4 w-4 mr-2" />
-                            查看命中流量
+                            <FileJson className="h-4 w-4 mr-2" />
+                            导出JSON
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          {task.status === "running" ? (
+                          {cmd.status === "running" ? (
                             <DropdownMenuItem>
                               <Pause className="h-4 w-4 mr-2" />
-                              暂停任务
+                              暂停指令
                             </DropdownMenuItem>
-                          ) : (
+                          ) : cmd.status !== "completed" ? (
                             <DropdownMenuItem>
                               <Play className="h-4 w-4 mr-2" />
-                              启用任务
+                              启用指令
                             </DropdownMenuItem>
-                          )}
+                          ) : null}
                           <DropdownMenuItem>
                             <Copy className="h-4 w-4 mr-2" />
-                            复制任务
+                            复制指令
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-destructive">
                             <Trash2 className="h-4 w-4 mr-2" />
-                            删除任务
+                            删除指令
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -447,7 +542,7 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
           {/* 分页 */}
           <div className="flex items-center justify-between px-4 py-4 border-t border-border">
             <div className="text-sm text-muted-foreground">
-              显示 {filteredTasks.length} 条，共 {tasksData.length} 条
+              显示 {filteredCommands.length} 条，共 {commandsData.length} 条
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled>
@@ -469,6 +564,74 @@ export function TrafficTaskList({ onCreateTask }: TrafficTaskListProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* 指令详情对话框 */}
+      <Dialog open={!!detailCommand} onOpenChange={() => setDetailCommand(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>指令详情</DialogTitle>
+            <DialogDescription>
+              指令ID: {detailCommand?.commandId}
+            </DialogDescription>
+          </DialogHeader>
+          {detailCommand && (
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">指令来源</div>
+                  <div className="font-medium">{CommandSource[detailCommand.commandSource as keyof typeof CommandSource]}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">优先级</div>
+                  <div className="font-medium">{CommandLevel[detailCommand.level as keyof typeof CommandLevel]}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">属主</div>
+                  <div className="font-medium">{detailCommand.owner}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">运营商</div>
+                  <div className="font-medium">{OperatorCodes[detailCommand.comCode as keyof typeof OperatorCodes]}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">指令场景</div>
+                  <div className="font-medium">{CommandScene[detailCommand.commandScene as keyof typeof CommandScene]}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">数据输出方式</div>
+                  <div className="font-medium">{DataOutputMethod[detailCommand.dataOutputMethod as keyof typeof DataOutputMethod]}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">生效省份</div>
+                  <div className="font-medium">{detailCommand.effectProvince.length} 个省份</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">规则数量</div>
+                  <div className="font-medium">{detailCommand.rulesCount} 条</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">规则类型</div>
+                  <div className="font-medium">{getRuleTypesDisplay(detailCommand.ruleTypes)}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">创建时间</div>
+                  <div className="font-medium">{detailCommand.createTime}</div>
+                </div>
+              </div>
+              <div className="p-4 rounded-lg bg-secondary/30">
+                <div className="text-sm text-muted-foreground mb-2">关联指令反馈数据项</div>
+                <div className="grid gap-1 text-sm">
+                  <div>A.13.3 公共互联网前N包结果数据上报</div>
+                  <div>B.2.4 公共互联网流日志上报</div>
+                  <div>B.11.1 公共互联网网络应用和协议元数据监测上报</div>
+                  <div>C.1.13 公共互联网动态筛选流量PCAP记录上报</div>
+                  <div>F.1.51 公共互联网动态流量获取统计信息反馈</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
