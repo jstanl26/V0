@@ -7,54 +7,43 @@ import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
   Network,
-  FileSearch,
+  BarChart3,
   BookOpen,
-  Layers,
-  Upload,
+  ArrowLeftRight,
+  Users,
   ChevronDown,
   Activity,
   Menu,
   X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useUser } from "@/lib/user-context"
 
-const navItems = [
-  {
-    title: "总览",
-    href: "/",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "任务管理",
-    href: "/traffic",
-    icon: Network,
-  },
-  {
-    title: "信息提取",
-    href: "/extraction",
-    icon: FileSearch,
-  },
-  {
-    title: "规则策略库",
-    href: "/rules",
-    icon: BookOpen,
-  },
-  {
-    title: "端口组管理",
-    href: "/links",
-    icon: Layers,
-  },
-  {
-    title: "上报记录",
-    href: "/reports",
-    icon: Upload,
-  },
+type PermKey = "command" | "io" | "stats" | "rules" | "users"
+
+const navItems: {
+  title: string
+  href: string
+  icon: typeof LayoutDashboard
+  perm?: PermKey
+}[] = [
+  { title: "总览", href: "/", icon: LayoutDashboard },
+  { title: "指令管理", href: "/traffic", icon: Network, perm: "command" },
+  { title: "流量统计", href: "/reports", icon: BarChart3, perm: "stats" },
+  { title: "规则策略库", href: "/rules", icon: BookOpen, perm: "rules" },
+  { title: "输入输出管理", href: "/links", icon: ArrowLeftRight, perm: "io" },
+  { title: "用户管理", href: "/users", icon: Users, perm: "users" },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const { currentUser } = useUser()
   const [collapsed, setCollapsed] = React.useState(false)
   const [mobileOpen, setMobileOpen] = React.useState(false)
+
+  const visibleItems = navItems.filter(
+    (item) => !item.perm || currentUser.permissions[item.perm]
+  )
 
   return (
     <>
@@ -103,7 +92,7 @@ export function AppSidebar() {
 
           {/* 导航菜单 */}
           <nav className="flex-1 space-y-1 p-2">
-            {navItems.map((item) => {
+            {visibleItems.map((item) => {
               const isActive = pathname === item.href
               return (
                 <Link
