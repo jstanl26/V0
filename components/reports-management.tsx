@@ -2,25 +2,29 @@
 
 import * as React from "react"
 import {
-  Search,
-  Filter,
+  BarChart3,
   Download,
   RefreshCw,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  AlertCircle,
-  Upload,
-  FileText,
+  Activity,
+  Gauge,
   Database,
-  Server,
-  ArrowUpRight,
-  RotateCcw,
-  Eye,
-  ChevronDown
+  Boxes,
+  Target,
+  ChevronDown,
 } from "lucide-react"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Pie,
+  PieChart,
+  Cell,
+  Line,
+  LineChart,
+} from "recharts"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -44,361 +48,288 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+} from "@/components/ui/chart"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { useUser } from "@/lib/user-context"
+import {
+  commandsData,
+  filterCommandsByUser,
+  type CommandRecord,
+} from "@/lib/commands-data"
+import {
+  OperatorCodes,
+  CommandLevel,
+  DataOutputMethod,
+} from "@/lib/command-types"
 
-// 模拟上报记录数据
-const mockReports = [
-  {
-    id: "RPT-20240320-001",
-    taskId: "TSK-2024-001",
-    taskName: "重点目标流量监测",
-    type: "pcap",
-    target: "国家侧-主节点",
-    fileSize: "256.8 MB",
-    recordCount: 125000,
-    status: "success",
-    startTime: "2024-03-20 14:00:00",
-    endTime: "2024-03-20 14:05:32",
-    duration: "5分32秒",
-    retryCount: 0,
-  },
-  {
-    id: "RPT-20240320-002",
-    taskId: "TSK-2024-002",
-    taskName: "异常流量采集",
-    type: "flow_log",
-    target: "国家侧-主节点",
-    fileSize: "45.2 MB",
-    recordCount: 890000,
-    status: "success",
-    startTime: "2024-03-20 14:10:00",
-    endTime: "2024-03-20 14:12:15",
-    duration: "2分15秒",
-    retryCount: 0,
-  },
-  {
-    id: "RPT-20240320-003",
-    taskId: "TSK-2024-003",
-    taskName: "协议元数据提取",
-    type: "metadata",
-    target: "国家侧-备节点",
-    fileSize: "128.5 MB",
-    recordCount: 456000,
-    status: "uploading",
-    startTime: "2024-03-20 14:20:00",
-    endTime: null,
-    duration: null,
-    retryCount: 0,
-    progress: 67,
-  },
-  {
-    id: "RPT-20240320-004",
-    taskId: "TSK-2024-001",
-    taskName: "重点目标流量监测",
-    type: "file",
-    target: "国家侧-主节点",
-    fileSize: "512.3 MB",
-    recordCount: 2300,
-    status: "failed",
-    startTime: "2024-03-20 13:30:00",
-    endTime: "2024-03-20 13:35:00",
-    duration: "5分00秒",
-    retryCount: 2,
-    errorMsg: "网络连接超时",
-  },
-  {
-    id: "RPT-20240320-005",
-    taskId: "TSK-2024-004",
-    taskName: "DNS解析日志",
-    type: "flow_log",
-    target: "省级节点",
-    fileSize: "89.6 MB",
-    recordCount: 1250000,
-    status: "pending",
-    startTime: null,
-    endTime: null,
-    duration: null,
-    retryCount: 0,
-  },
-  {
-    id: "RPT-20240320-006",
-    taskId: "TSK-2024-005",
-    taskName: "HTTP元数据采集",
-    type: "metadata",
-    target: "国家侧-主节点",
-    fileSize: "67.8 MB",
-    recordCount: 234000,
-    status: "success",
-    startTime: "2024-03-20 12:00:00",
-    endTime: "2024-03-20 12:02:45",
-    duration: "2分45秒",
-    retryCount: 1,
-  },
+type Dimension = "operator" | "level" | "output"
+
+const dimensionLabels: Record<Dimension, string> = {
+  operator: "运营商",
+  level: "优先级",
+  output: "输出方式",
+}
+
+// 按维度聚合统计
+function aggregate(data: CommandRecord[], dim: Dimension) {
+  const groups: Record<string, { totalTraffic: number; hitTraffic: number; totalPackets: number; reportFreq: number; count: number }> = {}
+
+  for (const c of data) {
+    let key = ""
+    if (dim === "operator") key = OperatorCodes[c.comCode as keyof typeof OperatorCodes] ?? c.comCode
+    else if (dim === "level") key = CommandLevel[c.level as keyof typeof CommandLevel] ?? String(c.level)
+    else key = DataOutputMethod[c.dataOutputMethod as keyof typeof DataOutputMethod] ?? String(c.dataOutputMethod)
+
+    if (!groups[key]) {
+      groups[key] = { totalTraffic: 0, hitTraffic: 0, totalPackets: 0, reportFreq: 0, count: 0 }
+    }
+    groups[key].totalTraffic += c.totalTraffic
+    groups[key].hitTraffic += c.hitTraffic
+    groups[key].totalPackets += c.totalPackets
+    groups[key].reportFreq += c.reportFreq
+    groups[key].count += 1
+  }
+
+  return Object.entries(groups).map(([name, v]) => ({
+    name,
+    totalTraffic: Number(v.totalTraffic.toFixed(1)),
+    hitTraffic: Number(v.hitTraffic.toFixed(1)),
+    totalPackets: v.totalPackets,
+    reportFreq: v.reportFreq,
+    count: v.count,
+  }))
+}
+
+const PIE_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--primary)",
 ]
 
-// 输出统计数据
-const outputStats = [
-  { label: "今日上报", value: "156", unit: "次", trend: "+12", icon: Upload },
-  { label: "成功率", value: "98.2", unit: "%", trend: "+0.5%", icon: CheckCircle2 },
-  { label: "上报数据量", value: "2.8", unit: "TB", trend: "+256GB", icon: Database },
-  { label: "平均耗时", value: "3.2", unit: "分钟", trend: "-0.3", icon: Clock },
-]
+const chartConfig = {
+  totalTraffic: { label: "总流量(TB)", color: "var(--chart-1)" },
+  hitTraffic: { label: "命中流量(Gbps)", color: "var(--chart-2)" },
+  totalPackets: { label: "总包数(亿)", color: "var(--chart-3)" },
+  reportFreq: { label: "上报频次(次/天)", color: "var(--chart-4)" },
+}
 
-// 输出类型统计
-const typeStats = [
-  { type: "PCAP文件", count: 45, size: "1.2 TB", color: "bg-blue-500" },
-  { type: "流日志", count: 68, size: "890 GB", color: "bg-green-500" },
-  { type: "元数据", count: 32, size: "456 GB", color: "bg-purple-500" },
-  { type: "还原文件", count: 11, size: "234 GB", color: "bg-orange-500" },
+// 趋势模拟数据（近 7 天总流量）
+const trendData = [
+  { day: "01-09", traffic: 38.2, hit: 9.1 },
+  { day: "01-10", traffic: 42.6, hit: 10.4 },
+  { day: "01-11", traffic: 40.1, hit: 9.8 },
+  { day: "01-12", traffic: 47.3, hit: 12.2 },
+  { day: "01-13", traffic: 51.8, hit: 13.5 },
+  { day: "01-14", traffic: 49.2, hit: 12.9 },
+  { day: "01-15", traffic: 55.4, hit: 14.7 },
 ]
 
 export function ReportsManagement() {
-  const [searchQuery, setSearchQuery] = React.useState("")
-  const [selectedType, setSelectedType] = React.useState<string>("all")
-  const [selectedStatus, setSelectedStatus] = React.useState<string>("all")
-  const [activeTab, setActiveTab] = React.useState("records")
+  const { currentUser } = useUser()
+  const [dimension, setDimension] = React.useState<Dimension>("operator")
 
-  const getStatusBadge = (status: string, progress?: number) => {
-    switch (status) {
-      case "success":
-        return (
-          <Badge className="bg-success/10 text-success border-success/20">
-            <CheckCircle2 className="h-3 w-3 mr-1" />
-            成功
-          </Badge>
-        )
-      case "failed":
-        return (
-          <Badge className="bg-destructive/10 text-destructive border-destructive/20">
-            <XCircle className="h-3 w-3 mr-1" />
-            失败
-          </Badge>
-        )
-      case "uploading":
-        return (
-          <Badge className="bg-primary/10 text-primary border-primary/20">
-            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-            上报中 {progress}%
-          </Badge>
-        )
-      case "pending":
-        return (
-          <Badge className="bg-muted text-muted-foreground border-border">
-            <Clock className="h-3 w-3 mr-1" />
-            待上报
-          </Badge>
-        )
-      default:
-        return null
-    }
-  }
+  const userData = React.useMemo(
+    () => filterCommandsByUser(commandsData, currentUser.username, currentUser.role),
+    [currentUser]
+  )
 
-  const getTypeBadge = (type: string) => {
-    switch (type) {
-      case "pcap":
-        return <Badge variant="outline" className="text-blue-400 border-blue-500/30">PCAP</Badge>
-      case "flow_log":
-        return <Badge variant="outline" className="text-green-400 border-green-500/30">流日志</Badge>
-      case "metadata":
-        return <Badge variant="outline" className="text-purple-400 border-purple-500/30">元数据</Badge>
-      case "file":
-        return <Badge variant="outline" className="text-orange-400 border-orange-500/30">还原文件</Badge>
-      default:
-        return null
-    }
-  }
+  const aggregated = React.useMemo(() => aggregate(userData, dimension), [userData, dimension])
 
-  const filteredReports = mockReports.filter(report => {
-    const matchesSearch = report.taskName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      report.id.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesType = selectedType === "all" || report.type === selectedType
-    const matchesStatus = selectedStatus === "all" || report.status === selectedStatus
-    return matchesSearch && matchesType && matchesStatus
-  })
+  // 汇总卡片指标
+  const summary = React.useMemo(() => {
+    return userData.reduce(
+      (acc, c) => {
+        acc.reportFreq += c.reportFreq
+        acc.peakTraffic = Math.max(acc.peakTraffic, c.peakTraffic)
+        acc.totalTraffic += c.totalTraffic
+        acc.totalPackets += c.totalPackets
+        acc.hitTraffic += c.hitTraffic
+        return acc
+      },
+      { reportFreq: 0, peakTraffic: 0, totalTraffic: 0, totalPackets: 0, hitTraffic: 0 }
+    )
+  }, [userData])
+
+  const summaryCards = [
+    { label: "上报频次", value: summary.reportFreq.toLocaleString(), unit: "次/天", icon: Activity, color: "text-chart-4" },
+    { label: "峰值流量", value: summary.peakTraffic.toFixed(1), unit: "Gbps", icon: Gauge, color: "text-chart-2" },
+    { label: "总流量", value: summary.totalTraffic.toFixed(1), unit: "TB", icon: Database, color: "text-chart-1" },
+    { label: "总包数", value: summary.totalPackets.toLocaleString(), unit: "亿", icon: Boxes, color: "text-chart-3" },
+    { label: "命中流量", value: summary.hitTraffic.toFixed(1), unit: "Gbps", icon: Target, color: "text-primary" },
+  ]
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
+      {/* 标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">输出与上报</h1>
-          <p className="text-sm text-muted-foreground mt-1">管理数据输出与国家侧上报记录</p>
+          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+            <BarChart3 className="h-6 w-6 text-primary" />
+            流量统计
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            统计各指令数据上报的频次、峰值流量、总流量、总包数与命中流量
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            刷新状态
+          <Button variant="outline" size="sm" className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            刷新
           </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            导出记录
+          <Button variant="outline" size="sm" className="gap-2">
+            <Download className="h-4 w-4" />
+            导出报表
           </Button>
         </div>
       </div>
 
-      {/* 统计卡片 */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {outputStats.map((stat) => (
-          <Card key={stat.label} className="bg-card">
+      {/* 汇总卡片 */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        {summaryCards.map((card) => (
+          <Card key={card.label}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span className="text-2xl font-semibold">{stat.value}</span>
-                    <span className="text-sm text-muted-foreground">{stat.unit}</span>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <stat.icon className="h-5 w-5 text-primary" />
-                  </div>
-                  <span className="text-xs text-success">{stat.trend}</span>
-                </div>
+                <span className="text-xs text-muted-foreground">{card.label}</span>
+                <card.icon className={`h-4 w-4 ${card.color}`} />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="text-2xl font-semibold text-foreground">{card.value}</span>
+                <span className="text-xs text-muted-foreground">{card.unit}</span>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* 输出类型分布 */}
-      <Card className="bg-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">输出类型分布</CardTitle>
-          <CardDescription>今日各类型数据输出统计</CardDescription>
+      {/* 维度切换 + 图表 */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">多维度统计分析</CardTitle>
+            <CardDescription>按不同统计维度查看流量分布</CardDescription>
+          </div>
+          <Select value={dimension} onValueChange={(v) => setDimension(v as Dimension)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="operator">按运营商</SelectItem>
+              <SelectItem value="level">按优先级</SelectItem>
+              <SelectItem value="output">按输出方式</SelectItem>
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
-            {typeStats.map((item) => (
-              <div key={item.type} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                <div className={`h-10 w-1 rounded-full ${item.color}`} />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{item.type}</div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-lg font-semibold">{item.count}</span>
-                    <span className="text-xs text-muted-foreground">次 / {item.size}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <Tabs defaultValue="bar" className="w-full">
+            <TabsList>
+              <TabsTrigger value="bar">流量柱状图</TabsTrigger>
+              <TabsTrigger value="pie">总流量占比</TabsTrigger>
+              <TabsTrigger value="trend">流量趋势</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="bar" className="pt-4">
+              <ChartContainer config={chartConfig} className="h-[320px] w-full">
+                <BarChart data={aggregated} accessibilityLayer>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="totalTraffic" fill="var(--color-totalTraffic)" radius={4} />
+                  <Bar dataKey="hitTraffic" fill="var(--color-hitTraffic)" radius={4} />
+                </BarChart>
+              </ChartContainer>
+            </TabsContent>
+
+            <TabsContent value="pie" className="pt-4">
+              <ChartContainer config={chartConfig} className="h-[320px] w-full">
+                <PieChart>
+                  <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
+                  <Pie data={aggregated} dataKey="totalTraffic" nameKey="name" innerRadius={60} outerRadius={110}>
+                    {aggregated.map((entry, i) => (
+                      <Cell key={entry.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <ChartLegend content={<ChartLegendContent nameKey="name" />} />
+                </PieChart>
+              </ChartContainer>
+            </TabsContent>
+
+            <TabsContent value="trend" className="pt-4">
+              <ChartContainer config={chartConfig} className="h-[320px] w-full">
+                <LineChart data={trendData} accessibilityLayer>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Line type="monotone" dataKey="traffic" stroke="var(--chart-1)" strokeWidth={2} dot={false} name="总流量(TB)" />
+                  <Line type="monotone" dataKey="hit" stroke="var(--chart-2)" strokeWidth={2} dot={false} name="命中流量(Gbps)" />
+                </LineChart>
+              </ChartContainer>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
-      {/* 上报记录 */}
-      <Card className="bg-card">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">上报记录</CardTitle>
-              <CardDescription>数据输出与上报历史记录</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="搜索记录..."
-                  className="pl-8 w-64"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <Select value={selectedType} onValueChange={setSelectedType}>
-                <SelectTrigger className="w-28">
-                  <SelectValue placeholder="类型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部类型</SelectItem>
-                  <SelectItem value="pcap">PCAP</SelectItem>
-                  <SelectItem value="flow_log">流日志</SelectItem>
-                  <SelectItem value="metadata">元数据</SelectItem>
-                  <SelectItem value="file">还原文件</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="w-28">
-                  <SelectValue placeholder="状态" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部状态</SelectItem>
-                  <SelectItem value="success">成功</SelectItem>
-                  <SelectItem value="uploading">上报中</SelectItem>
-                  <SelectItem value="failed">失败</SelectItem>
-                  <SelectItem value="pending">待上报</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+      {/* 明细列表 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">指令上报统计明细</CardTitle>
+          <CardDescription>每条指令的数据上报统计指标</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>记录编号</TableHead>
-                <TableHead>关联任务</TableHead>
-                <TableHead>数据类型</TableHead>
-                <TableHead>目标节点</TableHead>
-                <TableHead>数据量</TableHead>
-                <TableHead>记录数</TableHead>
-                <TableHead>耗时</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="w-24">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredReports.map((report) => (
-                <TableRow key={report.id}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {report.id}
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium text-sm">{report.taskName}</div>
-                      <div className="text-xs text-muted-foreground">{report.taskId}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{getTypeBadge(report.type)}</TableCell>
-                  <TableCell className="text-sm">
-                    <div className="flex items-center gap-1">
-                      <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                      {report.target}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{report.fileSize}</TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {report.recordCount.toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {report.duration || "-"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      {getStatusBadge(report.status, report.progress)}
-                      {report.status === "uploading" && report.progress && (
-                        <Progress value={report.progress} className="h-1 w-20" />
-                      )}
-                      {report.status === "failed" && (
-                        <div className="text-xs text-destructive">{report.errorMsg}</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                      {report.status === "failed" && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7">
-                          <RotateCcw className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>指令ID</TableHead>
+                  <TableHead>运营商</TableHead>
+                  <TableHead>优先级</TableHead>
+                  <TableHead>输出方式</TableHead>
+                  <TableHead className="text-right">上报频次(次/天)</TableHead>
+                  <TableHead className="text-right">峰值流量(Gbps)</TableHead>
+                  <TableHead className="text-right">总流量(TB)</TableHead>
+                  <TableHead className="text-right">总包数(亿)</TableHead>
+                  <TableHead className="text-right">命中流量(Gbps)</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {userData.map((c) => (
+                  <TableRow key={c.commandId}>
+                    <TableCell className="font-medium">{c.commandId}</TableCell>
+                    <TableCell>{OperatorCodes[c.comCode as keyof typeof OperatorCodes] ?? c.comCode}</TableCell>
+                    <TableCell>
+                      <Badge variant={c.level === 1 ? "destructive" : c.level === 2 ? "default" : "secondary"}>
+                        {CommandLevel[c.level as keyof typeof CommandLevel]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">{DataOutputMethod[c.dataOutputMethod as keyof typeof DataOutputMethod]}</TableCell>
+                    <TableCell className="text-right tabular-nums">{c.reportFreq.toLocaleString()}</TableCell>
+                    <TableCell className="text-right tabular-nums">{c.peakTraffic.toFixed(1)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{c.totalTraffic.toFixed(1)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{c.totalPackets.toLocaleString()}</TableCell>
+                    <TableCell className="text-right tabular-nums">{c.hitTraffic.toFixed(1)}</TableCell>
+                  </TableRow>
+                ))}
+                {userData.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                      暂无数据
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>
