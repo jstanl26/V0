@@ -13,13 +13,14 @@ import {
   Users,
   ChevronDown,
   Activity,
+  Bell,
   Menu,
   X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/lib/user-context"
 
-type PermKey = "command" | "io" | "stats" | "rules" | "users"
+type PermKey = "command" | "io" | "stats" | "rules" | "alerts" | "users"
 
 const navItems: {
   title: string
@@ -32,6 +33,7 @@ const navItems: {
   { title: "流量统计", href: "/reports", icon: BarChart3, perm: "stats" },
   { title: "规则策略库", href: "/rules", icon: BookOpen, perm: "rules" },
   { title: "输入输出管理", href: "/links", icon: ArrowLeftRight, perm: "io" },
+  { title: "告警管理", href: "/alerts", icon: Bell, perm: "alerts" },
   { title: "用户管理", href: "/users", icon: Users, perm: "users" },
 ]
 

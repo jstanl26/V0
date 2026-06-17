@@ -16,15 +16,16 @@ export interface AppUser {
     io: boolean // 输入输出管理
     stats: boolean // 流量统计
     rules: boolean // 规则策略库
+    alerts: boolean // 告警管理
     users: boolean // 用户管理
   }
 }
 
 // 角色权限模板
 export const rolePermissions: Record<AppUser["role"], AppUser["permissions"]> = {
-  admin: { command: true, io: true, stats: true, rules: true, users: true },
-  operator: { command: true, io: true, stats: true, rules: true, users: false },
-  viewer: { command: true, io: false, stats: true, rules: false, users: false },
+  admin: { command: true, io: true, stats: true, rules: true, alerts: true, users: true },
+  operator: { command: true, io: true, stats: true, rules: true, alerts: true, users: false },
+  viewer: { command: true, io: false, stats: true, rules: false, alerts: true, users: false },
 }
 
 export const roleLabels: Record<AppUser["role"], string> = {
