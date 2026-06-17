@@ -5,31 +5,22 @@ import {
   Search,
   Plus,
   MoreHorizontal,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Zap,
-  Server,
-  Network,
-  Settings,
   RefreshCw,
   Eye,
   Trash2,
-  Power,
-  Copy,
   Edit,
-  Layers
+  Network,
+  Zap,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  FileArchive,
+  FileText,
+  Send,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -52,7 +43,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Select,
@@ -62,16 +52,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { OperatorCodes, ProvinceCodes, SystemType } from "@/lib/command-types"
-
-// 端口组类型
-const portGroupTypes = [
-  { value: "input", label: "输入端口组", description: "用于流量采集输入" },
-  { value: "output", label: "输出端口组", description: "用于流量输出转发" },
-]
+import { OperatorCodes, ProvinceCodes, SystemType, TrafficReportType } from "@/lib/command-types"
+import { useUser } from "@/lib/user-context"
+import { cn } from "@/lib/utils"
 
 // 端口类型选项
 const portTypes = [
@@ -88,212 +73,129 @@ const accessTypes = [
   { value: "mirror", label: "镜像接入" },
 ]
 
-// 模拟端口组数据
-const mockPortGroups = [
+// 输出流量发生方式
+const outputTrafficTypes = [
+  { value: "traffic", label: "流量发送", icon: Send, desc: "通过端口组转发原始流量" },
+  { value: "pcap", label: "PCAP文件发送", icon: FileArchive, desc: "生成PCAP文件并发送至指定位置" },
+  { value: "log", label: "网络行为日志", icon: FileText, desc: "生成网络行为日志记录" },
+]
+
+interface IOMethod {
+  id: string
+  name: string
+  category: "input" | "output"
+  owner: string
+  description: string
+  status: "active" | "inactive"
+  taskCount: number
+  createdAt: string
+  // 输入方式 / 输出流量发送方式 的端口组配置
+  portConfig?: {
+    comCode: string
+    effectProvince: string[]
+    effectSystem: string[]
+    device: string
+    ports: string
+    portType: string
+    vlanRange: string
+    accessType: string
+    bandwidth: number
+  }
+  // 输出方式专属
+  outputType?: "traffic" | "pcap" | "log"
+  pcapConfig?: { url: string; storagePath: string; maxSize: number; retention: number }
+  logConfig?: { logType: string; format: string; pushUrl: string; sampleRatio: string }
+}
+
+const initialMethods: IOMethod[] = [
   {
-    id: "PG-001",
-    name: "省网出口-输入端口组A",
-    type: "input",
-    comCode: "0013",
-    effectProvince: ["110000", "120000"],
-    effectSystem: ["2"],
-    effectVendor: "华为",
-    effectHouse: "北京亦庄数据中心",
-    device: "DPI-CORE-01",
-    ports: ["GE0/0/1", "GE0/0/2"],
-    portType: "GE",
-    vlanRange: "100-200",
-    accessType: "split",
-    bandwidth: 10000,
+    id: "IN-001",
+    name: "省网出口-输入方式A",
+    category: "input",
+    owner: "admin",
+    description: "省网核心出口主链路输入方式",
     status: "active",
     taskCount: 8,
     createdAt: "2024-03-15",
-    description: "省网核心出口主链路输入端口组",
+    portConfig: { comCode: "0013", effectProvince: ["110000", "120000"], effectSystem: ["2"], device: "DPI-CORE-01", ports: "GE0/0/1, GE0/0/2", portType: "GE", vlanRange: "100-200", accessType: "split", bandwidth: 10000 },
   },
   {
-    id: "PG-002",
-    name: "城域网出口-输入端口组B",
-    type: "input",
-    comCode: "0013",
-    effectProvince: ["310000", "320000"],
-    effectSystem: ["2"],
-    effectVendor: "中兴",
-    effectHouse: "上海浦东数据中心",
-    device: "DPI-EDGE-01",
-    ports: ["XGE0/0/1", "XGE0/0/2", "XGE0/0/3"],
-    portType: "XGE",
-    vlanRange: "300-500",
-    accessType: "mirror",
-    bandwidth: 40000,
+    id: "IN-002",
+    name: "城域网出口-输入方式B",
+    category: "input",
+    owner: "operator1",
+    description: "城域网汇聚层输入方式",
     status: "active",
     taskCount: 12,
     createdAt: "2024-03-14",
-    description: "城域网汇聚层输入端口组",
+    portConfig: { comCode: "0013", effectProvince: ["310000", "320000"], effectSystem: ["2"], device: "DPI-EDGE-01", ports: "XGE0/0/1, XGE0/0/2", portType: "XGE", vlanRange: "300-500", accessType: "mirror", bandwidth: 40000 },
   },
   {
-    id: "PG-003",
-    name: "国家侧-输出端口组",
-    type: "output",
-    comCode: "0013",
-    effectProvince: ["110000"],
-    effectSystem: ["2"],
-    effectVendor: "",
-    effectHouse: "北京总部机房",
-    device: "FORWARD-01",
-    ports: ["100GE0/0/1"],
-    portType: "100GE",
-    vlanRange: "ALL",
-    accessType: "split",
-    bandwidth: 100000,
+    id: "OUT-001",
+    name: "国家侧-流量发送方式",
+    category: "output",
+    owner: "admin",
+    description: "通过端口组发送至国家侧",
     status: "active",
     taskCount: 15,
     createdAt: "2024-03-13",
-    description: "上报国家侧的输出端口组",
+    outputType: "traffic",
+    portConfig: { comCode: "0013", effectProvince: ["110000"], effectSystem: ["2"], device: "FORWARD-01", ports: "100GE0/0/1", portType: "100GE", vlanRange: "ALL", accessType: "split", bandwidth: 100000 },
   },
   {
-    id: "PG-004",
-    name: "企业侧-输出端口组",
-    type: "output",
-    comCode: "0013",
-    effectProvince: ["440000"],
-    effectSystem: ["2", "3"],
-    effectVendor: "华为",
-    effectHouse: "广州天河数据中心",
-    device: "FORWARD-02",
-    ports: ["40GE0/0/1", "40GE0/0/2"],
-    portType: "40GE",
-    vlanRange: "600-800",
-    accessType: "split",
-    bandwidth: 80000,
+    id: "OUT-002",
+    name: "本地PCAP留存方式",
+    category: "output",
+    owner: "analyst",
+    description: "PCAP文件留存至本地存储",
+    status: "active",
+    taskCount: 6,
+    createdAt: "2024-03-12",
+    outputType: "pcap",
+    pcapConfig: { url: "ftp://10.1.1.20/pcap", storagePath: "/data/pcap/store", maxSize: 5000, retention: 30 },
+  },
+  {
+    id: "OUT-003",
+    name: "网络行为日志方式",
+    category: "output",
+    owner: "monitor",
+    description: "生成网络行为日志并推送",
     status: "inactive",
     taskCount: 0,
-    createdAt: "2024-03-12",
-    description: "发送至企业侧监测设备的输出端口组",
-  },
-  {
-    id: "PG-005",
-    name: "IDC出口-输入端口组",
-    type: "input",
-    comCode: "0013",
-    effectProvince: ["330000"],
-    effectSystem: ["5"],
-    effectVendor: "锐捷",
-    effectHouse: "杭州云栖数据中心",
-    device: "DPI-IDC-01",
-    ports: ["100GE0/0/1", "100GE0/0/2"],
-    portType: "100GE",
-    vlanRange: "ALL",
-    accessType: "split",
-    bandwidth: 200000,
-    status: "active",
-    taskCount: 20,
     createdAt: "2024-03-10",
-    description: "IDC出口大流量采集端口组",
+    outputType: "log",
+    logConfig: { logType: "flow", format: "json", pushUrl: "https://log.center/api/ingest", sampleRatio: "10:1" },
   },
-]
-
-// 统计数据
-const stats = [
-  { label: "端口组总数", value: "5", icon: Layers, color: "text-primary" },
-  { label: "输入端口组", value: "3", icon: Network, color: "text-info" },
-  { label: "输出端口组", value: "2", icon: Zap, color: "text-success" },
-  { label: "关联任务", value: "55", icon: CheckCircle2, color: "text-warning" },
 ]
 
 export function LinksManagement() {
+  const { currentUser } = useUser()
+  const [methods, setMethods] = React.useState<IOMethod[]>(initialMethods)
+  const [activeTab, setActiveTab] = React.useState<"input" | "output">("input")
   const [searchQuery, setSearchQuery] = React.useState("")
-  const [selectedType, setSelectedType] = React.useState<string>("all")
-  const [selectedStatus, setSelectedStatus] = React.useState<string>("all")
-  const [addDialogOpen, setAddDialogOpen] = React.useState(false)
-  const [viewDialogOpen, setViewDialogOpen] = React.useState(false)
-  const [selectedGroup, setSelectedGroup] = React.useState<typeof mockPortGroups[0] | null>(null)
-  
-  // 新建端口组表单状态
-  const [newPortGroup, setNewPortGroup] = React.useState({
-    name: "",
-    type: "input",
-    comCode: "",
-    effectProvince: [] as string[],
-    effectSystem: ["2"],
-    effectVendor: "",
-    effectHouse: "",
-    device: "",
-    ports: "",
-    portType: "GE",
-    vlanRange: "",
-    accessType: "split",
-    bandwidth: 10000,
-    description: "",
-  })
+  const [addOpen, setAddOpen] = React.useState(false)
+  const [viewMethod, setViewMethod] = React.useState<IOMethod | null>(null)
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "active":
-        return (
-          <Badge className="bg-success/10 text-success border-success/20">
-            <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-            启用
-          </Badge>
-        )
-      case "inactive":
-        return (
-          <Badge className="bg-muted text-muted-foreground border-border">
-            <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-            停用
-          </Badge>
-        )
-      default:
-        return null
-    }
+  // 数据隔离
+  const visibleMethods = React.useMemo(() => {
+    if (currentUser.role === "admin") return methods
+    return methods.filter((m) => m.owner === currentUser.username)
+  }, [methods, currentUser])
+
+  const inputMethods = visibleMethods.filter((m) => m.category === "input")
+  const outputMethods = visibleMethods.filter((m) => m.category === "output")
+
+  const currentList = (activeTab === "input" ? inputMethods : outputMethods).filter(
+    (m) => m.name.toLowerCase().includes(searchQuery.toLowerCase()) || m.id.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  const handleAdd = (method: IOMethod) => {
+    setMethods((prev) => [...prev, method])
+    setAddOpen(false)
   }
 
-  const getTypeBadge = (type: string) => {
-    switch (type) {
-      case "input":
-        return <Badge className="bg-primary/10 text-primary border-primary/20">输入端口组</Badge>
-      case "output":
-        return <Badge className="bg-info/10 text-info border-info/20">输出端口组</Badge>
-      default:
-        return null
-    }
-  }
-
-  const filteredGroups = mockPortGroups.filter(group => {
-    const matchesSearch = group.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      group.id.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesType = selectedType === "all" || group.type === selectedType
-    const matchesStatus = selectedStatus === "all" || group.status === selectedStatus
-    return matchesSearch && matchesType && matchesStatus
-  })
-
-  const formatBandwidth = (bandwidth: number) => {
-    if (bandwidth >= 1000) {
-      return `${(bandwidth / 1000).toFixed(0)}Gbps`
-    }
-    return `${bandwidth}Mbps`
-  }
-
-  const toggleProvince = (code: string) => {
-    setNewPortGroup(prev => ({
-      ...prev,
-      effectProvince: prev.effectProvince.includes(code)
-        ? prev.effectProvince.filter(p => p !== code)
-        : [...prev.effectProvince, code]
-    }))
-  }
-
-  const toggleSystem = (code: string) => {
-    setNewPortGroup(prev => ({
-      ...prev,
-      effectSystem: prev.effectSystem.includes(code)
-        ? prev.effectSystem.filter(s => s !== code)
-        : [...prev.effectSystem, code]
-    }))
-  }
-
-  const handleViewDetail = (group: typeof mockPortGroups[0]) => {
-    setSelectedGroup(group)
-    setViewDialogOpen(true)
+  const handleDelete = (id: string) => {
+    setMethods((prev) => prev.filter((m) => m.id !== id))
   }
 
   return (
@@ -301,505 +203,553 @@ export function LinksManagement() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">端口组管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">预配置输入/输出端口组，便于指令下发时快速选择</p>
+          <h1 className="text-2xl font-semibold text-foreground">输入输出管理</h1>
+          <p className="text-sm text-muted-foreground mt-1">预配置输入方式与输出方式，供指令下发时快速选择</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             刷新状态
           </Button>
-          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                新建端口组
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>新建端口组</DialogTitle>
-                <DialogDescription>
-                  配置端口组信息，包含指令对象字段和网络配置
-                </DialogDescription>
-              </DialogHeader>
-              <Tabs defaultValue="basic" className="mt-4">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="basic">基本信息</TabsTrigger>
-                  <TabsTrigger value="object">指令对象</TabsTrigger>
-                  <TabsTrigger value="network">网络配置</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="basic" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>端口组名称 <span className="text-destructive">*</span></Label>
-                      <Input 
-                        placeholder="输入端口组名称"
-                        value={newPortGroup.name}
-                        onChange={(e) => setNewPortGroup(prev => ({ ...prev, name: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>端口组类型 <span className="text-destructive">*</span></Label>
-                      <Select 
-                        value={newPortGroup.type}
-                        onValueChange={(v) => setNewPortGroup(prev => ({ ...prev, type: v }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {portGroupTypes.map(type => (
-                            <SelectItem key={type.value} value={type.value}>
-                              <div>
-                                <div>{type.label}</div>
-                                <div className="text-xs text-muted-foreground">{type.description}</div>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>端口组描述</Label>
-                    <Textarea 
-                      placeholder="输入端口组描述（可选）"
-                      value={newPortGroup.description}
-                      onChange={(e) => setNewPortGroup(prev => ({ ...prev, description: e.target.value }))}
-                      rows={3}
-                    />
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="object" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>运营商代码 <span className="text-destructive">*</span></Label>
-                      <Select 
-                        value={newPortGroup.comCode}
-                        onValueChange={(v) => setNewPortGroup(prev => ({ ...prev, comCode: v }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择运营商" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(OperatorCodes).map(([code, name]) => (
-                            <SelectItem key={code} value={code}>{name} ({code})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>生效厂商</Label>
-                      <Input 
-                        placeholder="输入生效厂商（可选）"
-                        value={newPortGroup.effectVendor}
-                        onChange={(e) => setNewPortGroup(prev => ({ ...prev, effectVendor: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>生效机房</Label>
-                    <Input 
-                      placeholder="输入生效机房（可选）"
-                      value={newPortGroup.effectHouse}
-                      onChange={(e) => setNewPortGroup(prev => ({ ...prev, effectHouse: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <Label>生效系统 <span className="text-destructive">*</span></Label>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(SystemType).map(([key, label]) => (
-                        <Badge
-                          key={key}
-                          variant={newPortGroup.effectSystem.includes(key) ? "default" : "outline"}
-                          className="cursor-pointer"
-                          onClick={() => toggleSystem(key)}
-                        >
-                          {label}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <Label>生效省份 <span className="text-destructive">*</span></Label>
-                    <div className="grid grid-cols-4 gap-2 p-3 rounded-lg bg-secondary/50 max-h-[200px] overflow-y-auto">
-                      {Object.entries(ProvinceCodes).map(([code, name]) => (
-                        <div
-                          key={code}
-                          onClick={() => toggleProvince(code)}
-                          className={`px-2 py-1.5 rounded text-xs cursor-pointer transition-colors text-center ${
-                            newPortGroup.effectProvince.includes(code)
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-background hover:bg-muted"
-                          }`}
-                        >
-                          {String(name).replace(/省|市|自治区|壮族|回族|维吾尔/g, "")}
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground">已选择 {newPortGroup.effectProvince.length} 个省份</p>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="network" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>采集设备 <span className="text-destructive">*</span></Label>
-                      <Input 
-                        placeholder="如: DPI-CORE-01"
-                        value={newPortGroup.device}
-                        onChange={(e) => setNewPortGroup(prev => ({ ...prev, device: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>端口类型 <span className="text-destructive">*</span></Label>
-                      <Select 
-                        value={newPortGroup.portType}
-                        onValueChange={(v) => setNewPortGroup(prev => ({ ...prev, portType: v }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {portTypes.map(type => (
-                            <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>端口列表 <span className="text-destructive">*</span></Label>
-                    <Input 
-                      placeholder="多个端口用逗号分隔，如: GE0/0/1, GE0/0/2"
-                      value={newPortGroup.ports}
-                      onChange={(e) => setNewPortGroup(prev => ({ ...prev, ports: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground">输入端口标识，多个端口用逗号分隔</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>VLAN范围</Label>
-                      <Input 
-                        placeholder="如: 100-200 或 ALL"
-                        value={newPortGroup.vlanRange}
-                        onChange={(e) => setNewPortGroup(prev => ({ ...prev, vlanRange: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>接入方式 <span className="text-destructive">*</span></Label>
-                      <Select 
-                        value={newPortGroup.accessType}
-                        onValueChange={(v) => setNewPortGroup(prev => ({ ...prev, accessType: v }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {accessTypes.map(type => (
-                            <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>带宽容量 (Mbps)</Label>
-                    <Input 
-                      type="number"
-                      placeholder="10000"
-                      value={newPortGroup.bandwidth}
-                      onChange={(e) => setNewPortGroup(prev => ({ ...prev, bandwidth: Number(e.target.value) }))}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
-              <DialogFooter className="mt-6">
-                <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
-                  取消
-                </Button>
-                <Button onClick={() => setAddDialogOpen(false)}>
-                  创建端口组
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            新建{activeTab === "input" ? "输入" : "输出"}方式
+          </Button>
         </div>
       </div>
 
       {/* 统计卡片 */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.label} className="bg-card">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="text-2xl font-semibold mt-1">{stat.value}</p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <stat.icon className={`h-5 w-5 ${stat.color}`} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+        <StatCard label="输入方式" value={inputMethods.length} icon={ArrowDownToLine} />
+        <StatCard label="输出方式" value={outputMethods.length} icon={ArrowUpFromLine} />
+        <StatCard label="启用中" value={visibleMethods.filter((m) => m.status === "active").length} icon={Zap} />
+        <StatCard label="关联指令" value={visibleMethods.reduce((s, m) => s + m.taskCount, 0)} icon={Network} />
       </div>
 
-      {/* 端口组类型快捷筛选 */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={selectedType === "all" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSelectedType("all")}
-        >
-          全部类型
-        </Button>
-        {portGroupTypes.map(type => (
-          <Button
-            key={type.value}
-            variant={selectedType === type.value ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedType(type.value)}
-            className="gap-1"
-          >
-            {type.value === "input" ? <Network className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />}
-            {type.label}
-          </Button>
-        ))}
+      {/* Tab 切换 + 列表 */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "input" | "output")}>
+        <TabsList>
+          <TabsTrigger value="input" className="gap-2">
+            <ArrowDownToLine className="h-4 w-4" />
+            输入方式列表
+          </TabsTrigger>
+          <TabsTrigger value="output" className="gap-2">
+            <ArrowUpFromLine className="h-4 w-4" />
+            输出方式列表
+          </TabsTrigger>
+        </TabsList>
+
+        <div className="relative max-w-sm my-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input placeholder="搜索方式名称或编号..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 bg-secondary border-0" />
+        </div>
+
+        <TabsContent value="input">
+          <MethodTable list={currentList} category="input" onView={setViewMethod} onDelete={handleDelete} />
+        </TabsContent>
+        <TabsContent value="output">
+          <MethodTable list={currentList} category="output" onView={setViewMethod} onDelete={handleDelete} />
+        </TabsContent>
+      </Tabs>
+
+      {/* 新建对话框 */}
+      {addOpen && (
+        <AddMethodDialog defaultCategory={activeTab} owner={currentUser.username} existingCount={methods.length} onClose={() => setAddOpen(false)} onAdd={handleAdd} />
+      )}
+
+      {/* 详情对话框 */}
+      {viewMethod && <ViewMethodDialog method={viewMethod} onClose={() => setViewMethod(null)} />}
+    </div>
+  )
+}
+
+function StatCard({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Network }) {
+  return (
+    <Card className="bg-card">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="text-2xl font-semibold mt-1">{value}</p>
+          </div>
+          <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Icon className="h-5 w-5 text-primary" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function MethodTable({ list, category, onView, onDelete }: { list: IOMethod[]; category: "input" | "output"; onView: (m: IOMethod) => void; onDelete: (id: string) => void }) {
+  return (
+    <Card className="bg-card border-border">
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border hover:bg-transparent">
+                <TableHead className="min-w-[100px]">编号</TableHead>
+                <TableHead className="min-w-[160px]">方式名称</TableHead>
+                {category === "output" && <TableHead className="min-w-[120px]">流量发送方式</TableHead>}
+                {category === "input" && <TableHead className="min-w-[100px]">采集设备</TableHead>}
+                <TableHead className="min-w-[120px]">关键配置</TableHead>
+                <TableHead className="min-w-[80px]">属主</TableHead>
+                <TableHead className="min-w-[80px]">状态</TableHead>
+                <TableHead className="min-w-[80px]">关联指令</TableHead>
+                <TableHead className="min-w-[100px]">创建时间</TableHead>
+                <TableHead className="w-12"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+                    暂无{category === "input" ? "输入" : "输出"}方式数据
+                  </TableCell>
+                </TableRow>
+              ) : (
+                list.map((m) => (
+                  <TableRow key={m.id} className="border-border">
+                    <TableCell className="font-mono text-sm">{m.id}</TableCell>
+                    <TableCell className="font-medium">{m.name}</TableCell>
+                    {category === "output" && (
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {outputTrafficTypes.find((t) => t.value === m.outputType)?.label || "-"}
+                        </Badge>
+                      </TableCell>
+                    )}
+                    {category === "input" && <TableCell className="text-sm text-muted-foreground">{m.portConfig?.device || "-"}</TableCell>}
+                    <TableCell className="text-sm text-muted-foreground">
+                      {m.outputType === "pcap"
+                        ? m.pcapConfig?.storagePath
+                        : m.outputType === "log"
+                        ? m.logConfig?.format?.toUpperCase()
+                        : m.portConfig?.ports || "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{m.owner}</TableCell>
+                    <TableCell>
+                      {m.status === "active" ? (
+                        <Badge className="bg-success/10 text-success border-success/20">启用</Badge>
+                      ) : (
+                        <Badge variant="secondary">停用</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">{m.taskCount}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{m.createdAt}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => onView(m)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            查看详情
+                          </DropdownMenuItem>
+                          <DropdownMenuItem>
+                            <Edit className="h-4 w-4 mr-2" />
+                            编辑
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-destructive" onClick={() => onDelete(m.id)}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            删除
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// 端口组配置子表单
+function PortConfigForm({ config, onChange }: { config: NonNullable<IOMethod["portConfig"]>; onChange: (c: NonNullable<IOMethod["portConfig"]>) => void }) {
+  const toggleProvince = (code: string) => {
+    onChange({ ...config, effectProvince: config.effectProvince.includes(code) ? config.effectProvince.filter((p) => p !== code) : [...config.effectProvince, code] })
+  }
+  const toggleSystem = (code: string) => {
+    onChange({ ...config, effectSystem: config.effectSystem.includes(code) ? config.effectSystem.filter((s) => s !== code) : [...config.effectSystem, code] })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>运营商代码 <span className="text-destructive">*</span></Label>
+          <Select value={config.comCode} onValueChange={(v) => onChange({ ...config, comCode: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder="选择运营商" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(OperatorCodes).map(([code, name]) => (
+                <SelectItem key={code} value={code}>
+                  {name} ({code})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>采集设备 <span className="text-destructive">*</span></Label>
+          <Input placeholder="如: DPI-CORE-01" value={config.device} onChange={(e) => onChange({ ...config, device: e.target.value })} />
+        </div>
       </div>
 
-      {/* 端口组列表 */}
-      <Card className="bg-card">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">端口组列表</CardTitle>
-              <CardDescription>共 {filteredGroups.length} 个端口组</CardDescription>
+      <div className="space-y-2">
+        <Label>生效系统 <span className="text-destructive">*</span></Label>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(SystemType).map(([key, label]) => (
+            <Badge key={key} variant={config.effectSystem.includes(key) ? "default" : "outline"} className="cursor-pointer" onClick={() => toggleSystem(key)}>
+              {label}
+            </Badge>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>生效省份 <span className="text-destructive">*</span></Label>
+        <div className="grid grid-cols-4 gap-2 p-3 rounded-lg bg-secondary/50 max-h-[160px] overflow-y-auto">
+          {Object.entries(ProvinceCodes).map(([code, name]) => (
+            <div
+              key={code}
+              onClick={() => toggleProvince(code)}
+              className={cn(
+                "px-2 py-1.5 rounded text-xs cursor-pointer transition-colors text-center",
+                config.effectProvince.includes(code) ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+              )}
+            >
+              {String(name).replace(/省|市|自治区|壮族|回族|维吾尔/g, "")}
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="搜索端口组..."
-                  className="pl-8 w-64"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="w-28">
-                  <SelectValue placeholder="状态" />
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">已选择 {config.effectProvince.length} 个省份</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>端口类型 <span className="text-destructive">*</span></Label>
+          <Select value={config.portType} onValueChange={(v) => onChange({ ...config, portType: v })}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {portTypes.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>接入方式 <span className="text-destructive">*</span></Label>
+          <Select value={config.accessType} onValueChange={(v) => onChange({ ...config, accessType: v })}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {accessTypes.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>端口列表 <span className="text-destructive">*</span></Label>
+        <Input placeholder="多个端口用逗号分隔，如: GE0/0/1, GE0/0/2" value={config.ports} onChange={(e) => onChange({ ...config, ports: e.target.value })} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>VLAN范围</Label>
+          <Input placeholder="如: 100-200 或 ALL" value={config.vlanRange} onChange={(e) => onChange({ ...config, vlanRange: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <Label>带宽容量 (Mbps)</Label>
+          <Input type="number" placeholder="10000" value={config.bandwidth} onChange={(e) => onChange({ ...config, bandwidth: Number(e.target.value) })} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 新建方式对话框
+function AddMethodDialog({ defaultCategory, owner, existingCount, onClose, onAdd }: { defaultCategory: "input" | "output"; owner: string; existingCount: number; onClose: () => void; onAdd: (m: IOMethod) => void }) {
+  const [name, setName] = React.useState("")
+  const [category, setCategory] = React.useState<"input" | "output">(defaultCategory)
+  const [description, setDescription] = React.useState("")
+  const [outputType, setOutputType] = React.useState<"traffic" | "pcap" | "log">("traffic")
+  const emptyPortConfig = { comCode: "0013", effectProvince: [] as string[], effectSystem: ["2"], device: "", ports: "", portType: "GE", vlanRange: "", accessType: "split", bandwidth: 10000 }
+  const [portConfig, setPortConfig] = React.useState(emptyPortConfig)
+  const [pcapConfig, setPcapConfig] = React.useState({ url: "", storagePath: "", maxSize: 5000, retention: 30 })
+  const [logConfig, setLogConfig] = React.useState({ logType: "flow", format: "json", pushUrl: "", sampleRatio: "10:1" })
+
+  const handleSubmit = () => {
+    const prefix = category === "input" ? "IN" : "OUT"
+    const method: IOMethod = {
+      id: `${prefix}-${String(existingCount + 1).padStart(3, "0")}`,
+      name: name || `未命名${category === "input" ? "输入" : "输出"}方式`,
+      category,
+      owner,
+      description,
+      status: "active",
+      taskCount: 0,
+      createdAt: new Date().toISOString().slice(0, 10),
+    }
+    if (category === "input") {
+      method.portConfig = portConfig
+    } else {
+      method.outputType = outputType
+      if (outputType === "traffic") method.portConfig = portConfig
+      else if (outputType === "pcap") method.pcapConfig = pcapConfig
+      else method.logConfig = logConfig
+    }
+    onAdd(method)
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>新建方式</DialogTitle>
+          <DialogDescription>配置输入/输出方式，详情配置将根据方式类型自动变化</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5 mt-2">
+          {/* 基础信息 */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>方式名称 <span className="text-destructive">*</span></Label>
+              <Input placeholder="输入方式名称" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>方式类型 <span className="text-destructive">*</span></Label>
+              <Select value={category} onValueChange={(v) => setCategory(v as "input" | "output")}>
+                <SelectTrigger>
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">全部状态</SelectItem>
-                  <SelectItem value="active">启用</SelectItem>
-                  <SelectItem value="inactive">停用</SelectItem>
+                  <SelectItem value="input">输入方式</SelectItem>
+                  <SelectItem value="output">输出方式</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>端口组名称</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>运营商</TableHead>
-                <TableHead>设备/端口</TableHead>
-                <TableHead>带宽容量</TableHead>
-                <TableHead>生效省份</TableHead>
-                <TableHead className="text-right">关联任务</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="w-10"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredGroups.map((group) => (
-                <TableRow key={group.id}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{group.name}</div>
-                      <div className="text-xs text-muted-foreground">{group.id}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{getTypeBadge(group.type)}</TableCell>
-                  <TableCell className="text-sm">
-                    {OperatorCodes[group.comCode as keyof typeof OperatorCodes]}
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <div className="flex items-center gap-1">
-                        <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                        {group.device}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {group.ports.join(", ")} / VLAN {group.vlanRange}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {formatBandwidth(group.bandwidth)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1 max-w-[150px]">
-                      {group.effectProvince.slice(0, 2).map(code => (
-                        <Badge key={code} variant="outline" className="text-xs">
-                          {String(ProvinceCodes[code as keyof typeof ProvinceCodes] || code).replace(/省|市|自治区|壮族|回族|维吾尔/g, "")}
-                        </Badge>
-                      ))}
-                      {group.effectProvince.length > 2 && (
-                        <Badge variant="outline" className="text-xs">+{group.effectProvince.length - 2}</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">{group.taskCount}</TableCell>
-                  <TableCell>{getStatusBadge(group.status)}</TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleViewDetail(group)}>
-                          <Eye className="h-4 w-4 mr-2" />
-                          查看详情
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Edit className="h-4 w-4 mr-2" />
-                          编辑配置
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Copy className="h-4 w-4 mr-2" />
-                          复制端口组
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                          <Power className="h-4 w-4 mr-2" />
-                          {group.status === "inactive" ? "启用端口组" : "停用端口组"}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          删除端口组
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+          <div className="space-y-2">
+            <Label>方式描述</Label>
+            <Textarea placeholder="输入方式描述（可选）" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          </div>
 
-      {/* 详情对话框 */}
-      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>端口组详情</DialogTitle>
-            <DialogDescription>
-              {selectedGroup?.id} - {selectedGroup?.name}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedGroup && (
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">端口组类型</Label>
-                  <div className="mt-1">{getTypeBadge(selectedGroup.type)}</div>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">状态</Label>
-                  <div className="mt-1">{getStatusBadge(selectedGroup.status)}</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">运营商</Label>
-                  <p className="text-sm mt-1">{OperatorCodes[selectedGroup.comCode as keyof typeof OperatorCodes]}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">生效厂商</Label>
-                  <p className="text-sm mt-1">{selectedGroup.effectVendor || "-"}</p>
-                </div>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">生效机房</Label>
-                <p className="text-sm mt-1">{selectedGroup.effectHouse || "-"}</p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">生效省份</Label>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {selectedGroup.effectProvince.map(code => (
-                    <Badge key={code} variant="outline" className="text-xs">
-                      {ProvinceCodes[code as keyof typeof ProvinceCodes]}
-                    </Badge>
+          {/* 详情配置：根据类型变化 */}
+          <div className="border-t border-border pt-4">
+            {category === "input" ? (
+              <>
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <Network className="h-4 w-4 text-primary" />
+                  端口组配置
+                </h3>
+                <PortConfigForm config={portConfig} onChange={setPortConfig} />
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm font-semibold mb-3">输出流量发生方式 <span className="text-destructive">*</span></h3>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {outputTrafficTypes.map((t) => (
+                    <div
+                      key={t.value}
+                      onClick={() => setOutputType(t.value as "traffic" | "pcap" | "log")}
+                      className={cn(
+                        "p-3 rounded-lg border cursor-pointer transition-colors text-center",
+                        outputType === t.value ? "border-primary bg-primary/10" : "border-border hover:bg-muted"
+                      )}
+                    >
+                      <t.icon className={cn("h-5 w-5 mx-auto mb-1", outputType === t.value ? "text-primary" : "text-muted-foreground")} />
+                      <div className="text-sm font-medium">{t.label}</div>
+                      <div className="text-[10px] text-muted-foreground mt-1">{t.desc}</div>
+                    </div>
                   ))}
                 </div>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">生效系统</Label>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {selectedGroup.effectSystem.map(code => (
-                    <Badge key={code} variant="outline" className="text-xs">
-                      {SystemType[code as keyof typeof SystemType]}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">采集设备</Label>
-                  <p className="text-sm mt-1">{selectedGroup.device}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">接入方式</Label>
-                  <p className="text-sm mt-1">{selectedGroup.accessType === "split" ? "分光接入" : "镜像接入"}</p>
-                </div>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">端口列表</Label>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {selectedGroup.ports.map(port => (
-                    <Badge key={port} variant="secondary" className="font-mono text-xs">
-                      {port}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">VLAN范围</Label>
-                  <p className="text-sm mt-1 font-mono">{selectedGroup.vlanRange}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">带宽容量</Label>
-                  <p className="text-sm mt-1 font-mono">{formatBandwidth(selectedGroup.bandwidth)}</p>
-                </div>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">描述</Label>
-                <p className="text-sm mt-1">{selectedGroup.description || "-"}</p>
-              </div>
+
+                {/* 流量发送 -> 端口组配置 */}
+                {outputType === "traffic" && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Network className="h-4 w-4 text-primary" />
+                      端口组配置
+                    </h3>
+                    <PortConfigForm config={portConfig} onChange={setPortConfig} />
+                  </div>
+                )}
+
+                {/* PCAP文件发送 -> URL/存储配置 */}
+                {outputType === "pcap" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>发送URL <span className="text-destructive">*</span></Label>
+                        <Input placeholder="如: ftp://10.1.1.20/pcap" value={pcapConfig.url} onChange={(e) => setPcapConfig({ ...pcapConfig, url: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>本地存储位置 <span className="text-destructive">*</span></Label>
+                        <Input placeholder="如: /data/pcap/store" value={pcapConfig.storagePath} onChange={(e) => setPcapConfig({ ...pcapConfig, storagePath: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>单文件最大容量 (MB)</Label>
+                        <Input type="number" value={pcapConfig.maxSize} onChange={(e) => setPcapConfig({ ...pcapConfig, maxSize: Number(e.target.value) })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>留存时长 (天)</Label>
+                        <Input type="number" value={pcapConfig.retention} onChange={(e) => setPcapConfig({ ...pcapConfig, retention: Number(e.target.value) })} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 网络行为日志 -> 日志配置 */}
+                {outputType === "log" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>日志类型</Label>
+                        <Select value={logConfig.logType} onValueChange={(v) => setLogConfig({ ...logConfig, logType: v })}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="flow">流日志</SelectItem>
+                            <SelectItem value="session">会话日志</SelectItem>
+                            <SelectItem value="dns">DNS日志</SelectItem>
+                            <SelectItem value="http">HTTP日志</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>日志格式</Label>
+                        <Select value={logConfig.format} onValueChange={(v) => setLogConfig({ ...logConfig, format: v })}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="json">JSON</SelectItem>
+                            <SelectItem value="syslog">Syslog</SelectItem>
+                            <SelectItem value="csv">CSV</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>推送地址</Label>
+                        <Input placeholder="如: https://log.center/api/ingest" value={logConfig.pushUrl} onChange={(e) => setLogConfig({ ...logConfig, pushUrl: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>采样比</Label>
+                        <Select value={logConfig.sampleRatio} onValueChange={(v) => setLogConfig({ ...logConfig, sampleRatio: v })}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1:1">全量 (1:1)</SelectItem>
+                            <SelectItem value="10:1">10:1</SelectItem>
+                            <SelectItem value="100:1">100:1</SelectItem>
+                            <SelectItem value="1000:1">1000:1</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="mt-4">
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button onClick={handleSubmit}>创建方式</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// 详情对话框
+function ViewMethodDialog({ method, onClose }: { method: IOMethod; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{method.name}</DialogTitle>
+          <DialogDescription>
+            {method.category === "input" ? "输入方式" : "输出方式"} · {method.id}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2 text-sm">
+          <p className="text-muted-foreground">{method.description || "无描述"}</p>
+
+          {method.category === "output" && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">流量发送方式：</span>
+              <Badge variant="outline">{outputTrafficTypes.find((t) => t.value === method.outputType)?.label}</Badge>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-              关闭
-            </Button>
-            <Button>
-              <Edit className="h-4 w-4 mr-2" />
-              编辑配置
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+          {method.portConfig && (
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/50">
+              <DetailRow label="运营商" value={OperatorCodes[method.portConfig.comCode as keyof typeof OperatorCodes]} />
+              <DetailRow label="采集设备" value={method.portConfig.device} />
+              <DetailRow label="端口类型" value={method.portConfig.portType} />
+              <DetailRow label="接入方式" value={accessTypes.find((a) => a.value === method.portConfig!.accessType)?.label || ""} />
+              <DetailRow label="端口列表" value={method.portConfig.ports} />
+              <DetailRow label="VLAN范围" value={method.portConfig.vlanRange} />
+              <DetailRow label="带宽容量" value={`${(method.portConfig.bandwidth / 1000).toFixed(0)} Gbps`} />
+              <DetailRow label="生效省份" value={method.portConfig.effectProvince.map((c) => String(ProvinceCodes[c as keyof typeof ProvinceCodes]).replace(/省|市|自治区|壮族|回族|维吾尔/g, "")).join("、")} />
+            </div>
+          )}
+
+          {method.pcapConfig && (
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/50">
+              <DetailRow label="发送URL" value={method.pcapConfig.url} />
+              <DetailRow label="存储位置" value={method.pcapConfig.storagePath} />
+              <DetailRow label="单文件最大容量" value={`${method.pcapConfig.maxSize} MB`} />
+              <DetailRow label="留存时长" value={`${method.pcapConfig.retention} 天`} />
+            </div>
+          )}
+
+          {method.logConfig && (
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/50">
+              <DetailRow label="日志类型" value={method.logConfig.logType} />
+              <DetailRow label="日志格式" value={method.logConfig.format.toUpperCase()} />
+              <DetailRow label="推送地址" value={method.logConfig.pushUrl} />
+              <DetailRow label="采样比" value={method.logConfig.sampleRatio} />
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="font-medium break-all">{value || "-"}</span>
     </div>
   )
 }

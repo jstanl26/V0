@@ -13,8 +13,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import { useUser, roleLabels } from "@/lib/user-context"
 
 export function AppHeader() {
+  const { currentUser, users, switchUser } = useUser()
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
       {/* 搜索栏 */}
@@ -22,7 +24,7 @@ export function AppHeader() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="搜索任务、规则、链路..."
+            placeholder="搜索指令、规则、端口组..."
             className="pl-9 bg-secondary border-0 focus-visible:ring-1"
           />
         </div>
@@ -75,17 +77,37 @@ export function AppHeader() {
         {/* 用户菜单 */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full">
+            <Button variant="ghost" className="gap-2 rounded-full pl-1 pr-3">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 <User className="h-4 w-4" />
               </div>
+              <div className="hidden md:flex flex-col items-start leading-tight">
+                <span className="text-xs font-medium">{currentUser.displayName}</span>
+                <span className="text-[10px] text-muted-foreground">{roleLabels[currentUser.role]}</span>
+              </div>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>管理员</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>
+              <div className="flex flex-col">
+                <span>{currentUser.displayName}</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {currentUser.username} · {currentUser.org}
+                </span>
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>个人设置</DropdownMenuItem>
-            <DropdownMenuItem>系统配置</DropdownMenuItem>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">切换登录用户（演示数据隔离）</DropdownMenuLabel>
+            {users.map((u) => (
+              <DropdownMenuItem
+                key={u.id}
+                onClick={() => switchUser(u.id)}
+                className="flex items-center justify-between"
+              >
+                <span>{u.displayName}</span>
+                <span className="text-xs text-muted-foreground">{roleLabels[u.role]}</span>
+              </DropdownMenuItem>
+            ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem>退出登录</DropdownMenuItem>
           </DropdownMenuContent>
